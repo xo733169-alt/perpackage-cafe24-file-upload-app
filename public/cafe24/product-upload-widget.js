@@ -94,6 +94,9 @@
       "#app-perpackage-product-upload .ppu-button:disabled{background:#8b97ba;cursor:not-allowed}",
       "#app-perpackage-product-upload .ppu-status{margin:2px 0 0;font-size:13px;line-height:1.5;color:#4b5875}",
       "#app-perpackage-product-upload .ppu-result{margin:10px 0 0;padding:10px;border-radius:6px;background:#fff;border:1px solid #d9e2f2;font-size:13px;line-height:1.6}",
+      "#app-perpackage-product-upload .ppu-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}",
+      "#app-perpackage-product-upload .ppu-action{padding:8px 10px;border:1px solid #b8c4dd;border-radius:6px;background:#fff;color:#1f2a44;font-size:12px;font-weight:700;cursor:pointer}",
+      "#app-perpackage-product-upload .ppu-action:hover{border-color:#2A408C;color:#2A408C}",
       "#app-perpackage-product-upload .ppu-error{color:#b42318}",
       "#app-perpackage-product-upload .ppu-success{color:#155724}",
       "#app-perpackage-product-upload .ppu-warning{color:#9a6700}",
@@ -352,7 +355,7 @@
     element.setAttribute("value", value);
   }
 
-  function applyFileIdToCafe24Input(fileId) {
+  function applyFileIdToCafe24Input(fileId, preferredMatch) {
     if (!fileId) {
       return {
         status: "not_found",
@@ -360,7 +363,7 @@
       };
     }
 
-    var match = findFileIdInput();
+    var match = preferredMatch || findFileIdInput();
     if (!match || !match.element) {
       return {
         status: "not_found",
@@ -377,6 +380,30 @@
       status: "success",
       source: match.source
     };
+  }
+
+  function renderUploadResult(result, uploaded, fileId, cafe24InputResult) {
+    var actions = [
+      '<div class="ppu-actions">'
+    ];
+
+    if (cafe24InputResult.status !== "success") {
+      actions.push('<button class="ppu-action" type="button" data-ppu-action="retry-file-id">업로드 파일 ID 다시 입력하기</button>');
+    }
+
+    actions.push('<button class="ppu-action" type="button" data-ppu-action="reset-upload">다시 업로드하기</button>');
+    actions.push("</div>");
+
+    result.hidden = false;
+    result.innerHTML = [
+      "<strong>업로드 정보</strong>",
+      "<br>file_id: " + escapeHtml(fileId || "-"),
+      "<br>original_filename: " + escapeHtml(uploaded.original_filename || "-"),
+      "<br>status: " + escapeHtml(uploaded.status || "-"),
+      "<br>Cafe24 입력 옵션 반영 여부: " + escapeHtml(cafe24InputResult.status),
+      "<br>input source: " + escapeHtml(cafe24InputResult.source || "-"),
+      actions.join("")
+    ].join("");
   }
 
   function dispatchFieldEvent(element, eventName) {
@@ -421,6 +448,45 @@
     var status = wrapper.querySelector(".ppu-status");
     var result = wrapper.querySelector(".ppu-result");
     var appOrigin = getAppOrigin();
+    var currentUpload = null;
+
+    result.addEventListener("click", function (event) {
+      var actionButton = event.target && event.target.closest && event.target.closest("[data-ppu-action]");
+      if (!actionButton) return;
+
+      var action = actionButton.getAttribute("data-ppu-action");
+
+      if (action === "retry-file-id") {
+        if (!currentUpload || !currentUpload.fileId) {
+          showMessage(status, result, "다시 입력할 업로드 파일 ID가 없습니다.", true);
+          return;
+        }
+
+        var retryResult = applyFileIdToCafe24Input(currentUpload.fileId);
+        currentUpload.cafe24InputResult = retryResult;
+
+        if (retryResult.status === "success") {
+          status.className = "ppu-status ppu-success";
+          status.textContent = "업로드 파일 ID가 입력 옵션에 다시 반영되었습니다.";
+          renderUploadResult(result, currentUpload.uploaded, currentUpload.fileId, retryResult);
+        } else {
+          status.className = "ppu-status ppu-warning";
+          status.textContent = "상품 옵션을 먼저 선택한 뒤 다시 눌러주세요.";
+          renderUploadResult(result, currentUpload.uploaded, currentUpload.fileId, retryResult);
+        }
+      }
+
+      if (action === "reset-upload") {
+        currentUpload = null;
+        form.reset();
+        fileInput.value = "";
+        button.disabled = false;
+        status.className = "ppu-status";
+        status.textContent = "새 파일을 선택한 뒤 업로드해 주세요.";
+        result.hidden = true;
+        result.textContent = "";
+      }
+    });
 
     form.addEventListener("submit", function (event) {
       event.preventDefault();
@@ -433,6 +499,15 @@
 
       if (!appOrigin) {
         showMessage(status, result, "업로드 서버 주소를 확인할 수 없습니다.", true);
+        return;
+      }
+
+      var fileIdInputMatch = findFileIdInput();
+      if (!fileIdInputMatch || !fileIdInputMatch.element) {
+        status.className = "ppu-status ppu-warning";
+        status.textContent = "먼저 상품 옵션을 선택해 주세요. 옵션 선택 후 파일 업로드를 진행할 수 있습니다.";
+        result.hidden = true;
+        result.textContent = "";
         return;
       }
 
@@ -467,20 +542,17 @@
         .then(function (json) {
           var uploaded = json.file || {};
           var fileId = uploaded.id || json.id || "";
-          var cafe24InputResult = applyFileIdToCafe24Input(fileId);
+          var cafe24InputResult = applyFileIdToCafe24Input(fileId, fileIdInputMatch);
+          currentUpload = {
+            uploaded: uploaded,
+            fileId: fileId,
+            cafe24InputResult: cafe24InputResult
+          };
           status.className = "ppu-status ppu-success";
           status.textContent = cafe24InputResult.status === "success"
             ? "업로드가 완료되었고 주문 연결용 파일 ID가 입력되었습니다."
             : "업로드가 완료되었습니다. 주문 연결용 입력 옵션은 찾지 못했습니다.";
-          result.hidden = false;
-          result.innerHTML = [
-            "<strong>업로드 정보</strong>",
-            "<br>file_id: " + escapeHtml(fileId || "-"),
-            "<br>original_filename: " + escapeHtml(uploaded.original_filename || "-"),
-            "<br>status: " + escapeHtml(uploaded.status || "-"),
-            "<br>Cafe24 입력 옵션 반영 여부: " + escapeHtml(cafe24InputResult.status),
-            "<br>input source: " + escapeHtml(cafe24InputResult.source || "-")
-          ].join("");
+          renderUploadResult(result, uploaded, fileId, cafe24InputResult);
           form.reset();
         })
         .catch(function (error) {
