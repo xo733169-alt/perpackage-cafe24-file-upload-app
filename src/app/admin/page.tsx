@@ -5,6 +5,10 @@ import { getAdminAuthConfigStatus, isAdminAuthenticated } from "@/lib/admin/auth
 import { getCafe24ConfigStatus } from "@/lib/cafe24/config";
 import { getCafe24Installation } from "@/lib/cafe24/token-store";
 import { listFileDownloadLogs, type FileDownloadLogRecord } from "@/lib/files/download-log-service";
+import {
+  listFileStatusChangeLogs,
+  type FileStatusChangeLogRecord
+} from "@/lib/files/file-review-log-service";
 import { getFileStatusLabel } from "@/lib/files/file-status";
 import { getFileById, listFilesByOrderId, listRecentFiles } from "@/lib/files/file-service";
 import type { UploadedFileRecord } from "@/lib/files/types";
@@ -18,6 +22,7 @@ type FileLookupState = {
   query: string;
   file: UploadedFileRecord | null;
   downloadLogs: FileDownloadLogRecord[];
+  statusLogs: FileStatusChangeLogRecord[];
   message: string | null;
   status: "idle" | "found" | "not_found" | "empty" | "error";
 };
@@ -25,6 +30,7 @@ type FileLookupState = {
 type OrderLookupState = {
   query: string;
   files: UploadedFileRecord[];
+  statusLogMap: Record<string, FileStatusChangeLogRecord[]>;
   message: string | null;
   status: "idle" | "found" | "not_found" | "empty" | "error";
 };
@@ -92,11 +98,18 @@ async function lookupFileById(rawFileId: string, shouldSearch: boolean): Promise
   const query = rawFileId.trim();
 
   if (!shouldSearch) {
-    return { query: "", file: null, downloadLogs: [], message: null, status: "idle" };
+    return { query: "", file: null, downloadLogs: [], statusLogs: [], message: null, status: "idle" };
   }
 
   if (!query) {
-    return { query: rawFileId, file: null, downloadLogs: [], message: "file_id를 입력해 주세요.", status: "empty" };
+    return {
+      query: rawFileId,
+      file: null,
+      downloadLogs: [],
+      statusLogs: [],
+      message: "file_id를 입력해 주세요.",
+      status: "empty"
+    };
   }
 
   try {
@@ -107,18 +120,23 @@ async function lookupFileById(rawFileId: string, shouldSearch: boolean): Promise
         query,
         file: null,
         downloadLogs: [],
+        statusLogs: [],
         message: "해당 file_id의 업로드 파일을 찾지 못했습니다.",
         status: "not_found"
       };
     }
 
-    const downloadLogs = await listFileDownloadLogs(file.id, 5);
-    return { query, file, downloadLogs, message: null, status: "found" };
+    const [downloadLogs, statusLogs] = await Promise.all([
+      listFileDownloadLogs(file.id, 5),
+      listFileStatusChangeLogs(file.id, 10)
+    ]);
+    return { query, file, downloadLogs, statusLogs, message: null, status: "found" };
   } catch (error) {
     return {
       query,
       file: null,
       downloadLogs: [],
+      statusLogs: [],
       message: error instanceof Error ? error.message : "파일 조회에 실패했습니다.",
       status: "error"
     };
@@ -129,11 +147,17 @@ async function lookupFilesByOrderId(rawOrderId: string, shouldSearch: boolean): 
   const query = rawOrderId.trim();
 
   if (!shouldSearch) {
-    return { query: "", files: [], message: null, status: "idle" };
+    return { query: "", files: [], statusLogMap: {}, message: null, status: "idle" };
   }
 
   if (!query) {
-    return { query: rawOrderId, files: [], message: "주문번호를 입력해 주세요.", status: "empty" };
+    return {
+      query: rawOrderId,
+      files: [],
+      statusLogMap: {},
+      message: "주문번호를 입력해 주세요.",
+      status: "empty"
+    };
   }
 
   try {
@@ -143,16 +167,23 @@ async function lookupFilesByOrderId(rawOrderId: string, shouldSearch: boolean): 
       return {
         query,
         files: [],
+        statusLogMap: {},
         message: "해당 주문번호에 연결된 업로드 파일이 없습니다.",
         status: "not_found"
       };
     }
 
-    return { query, files, message: null, status: "found" };
+    const statusLogEntries = await Promise.all(
+      files.map(async (file) => [file.id, await listFileStatusChangeLogs(file.id, 3)] as const)
+    );
+    const statusLogMap = Object.fromEntries(statusLogEntries);
+
+    return { query, files, statusLogMap, message: null, status: "found" };
   } catch (error) {
     return {
       query,
       files: [],
+      statusLogMap: {},
       message: error instanceof Error ? error.message : "주문번호 기준 파일 조회에 실패했습니다.",
       status: "error"
     };
@@ -276,6 +307,42 @@ function DownloadLogPanel({ logs }: { logs: FileDownloadLogRecord[] }) {
   );
 }
 
+function StatusChangeLogPanel({ logs }: { logs: FileStatusChangeLogRecord[] }) {
+  return (
+    <div style={{ marginTop: 18 }}>
+      <h3>상태 변경 이력</h3>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>변경일시</th>
+              <th>이전 상태</th>
+              <th>변경 상태</th>
+              <th>메모</th>
+              <th>처리자</th>
+            </tr>
+          </thead>
+          <tbody>
+            {logs.length ? logs.map((log) => (
+              <tr key={log.id}>
+                <td>{log.created_at}</td>
+                <td>{getFileStatusLabel(log.previous_status)}</td>
+                <td><span className="status">{getFileStatusLabel(log.new_status)}</span></td>
+                <td>{log.memo ?? "-"}</td>
+                <td>{log.admin_user ?? "admin"}</td>
+              </tr>
+            )) : (
+              <tr>
+                <td colSpan={5}>아직 상태 변경 이력이 없습니다.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function OrderLinkPanel({
   file,
   message
@@ -307,7 +374,13 @@ function OrderLinkPanel({
   );
 }
 
-function OrderFileResultCard({ file }: { file: UploadedFileRecord }) {
+function OrderFileResultCard({
+  file,
+  statusLogs
+}: {
+  file: UploadedFileRecord;
+  statusLogs: FileStatusChangeLogRecord[];
+}) {
   return (
     <div className="notice" style={{ marginTop: 14 }}>
       <div className="grid grid-3">
@@ -323,6 +396,7 @@ function OrderFileResultCard({ file }: { file: UploadedFileRecord }) {
         <FileLookupField label="updated_at" value={file.updated_at} />
       </div>
       <AdminFileStatusForm fileId={file.id} currentStatus={file.status} />
+      <StatusChangeLogPanel logs={statusLogs} />
       <DownloadPanel file={file} />
     </div>
   );
@@ -487,7 +561,11 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
               주문번호 {data.orderLookup.query}에 연결된 파일 {data.orderLookup.files.length}개
             </p>
             {data.orderLookup.files.map((file) => (
-              <OrderFileResultCard key={file.id} file={file} />
+              <OrderFileResultCard
+                key={file.id}
+                file={file}
+                statusLogs={data.orderLookup.statusLogMap[file.id] ?? []}
+              />
             ))}
           </div>
         ) : null}
@@ -538,6 +616,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
             </div>
             <OrderLinkPanel file={data.fileLookup.file} message={orderLinkMessage} />
             <AdminFileStatusForm fileId={data.fileLookup.file.id} currentStatus={data.fileLookup.file.status} />
+            <StatusChangeLogPanel logs={data.fileLookup.statusLogs} />
             <DownloadPanel file={data.fileLookup.file} />
             <DownloadLogPanel logs={data.fileLookup.downloadLogs} />
           </div>
