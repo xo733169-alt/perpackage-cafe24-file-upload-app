@@ -10,6 +10,11 @@ export type CreateFileReviewLogInput = {
   userAgent?: string | null;
 };
 
+export type CreateFileReviewLogResult = {
+  saved: boolean;
+  errorMessage: string | null;
+};
+
 function sanitizeText(value?: string | null, maxLength = 500) {
   if (!value) {
     return null;
@@ -18,39 +23,66 @@ function sanitizeText(value?: string | null, maxLength = 500) {
   return value.replace(/[\r\n\0]/g, " ").trim().slice(0, maxLength) || null;
 }
 
-export async function createFileReviewLog(input: CreateFileReviewLogInput) {
+function sanitizeErrorMessage(message?: string | null) {
+  return sanitizeText(message, 300);
+}
+
+export async function createFileReviewLog(input: CreateFileReviewLogInput): Promise<CreateFileReviewLogResult> {
+  const payload = {
+    file_id: input.fileId,
+    previous_status: input.previousStatus,
+    new_status: input.newStatus,
+    memo: sanitizeText(input.memo),
+    admin_user: sanitizeText(input.adminUser, 120) ?? "admin",
+    ip_address: sanitizeText(input.ipAddress, 120),
+    user_agent: sanitizeText(input.userAgent, 500)
+  };
+
   try {
     const supabase = getSupabaseAdmin();
     const { error } = await supabase
       .from("file_review_logs")
-      .insert({
-        file_id: input.fileId,
-        previous_status: input.previousStatus,
-        new_status: input.newStatus,
-        memo: sanitizeText(input.memo),
-        admin_user: sanitizeText(input.adminUser, 120) ?? "admin",
-        ip_address: sanitizeText(input.ipAddress, 120),
-        user_agent: sanitizeText(input.userAgent, 500)
-      });
+      .insert(payload);
 
     if (error) {
+      const errorMessage = sanitizeErrorMessage(error.message);
+
       console.warn("file_review_log_insert_failed", {
         code: error.code ?? null,
-        message: error.message ?? null,
+        message: errorMessage,
+        details: sanitizeErrorMessage(error.details),
+        hint: sanitizeErrorMessage(error.hint),
         fileId: input.fileId,
+        previousStatus: input.previousStatus,
         newStatus: input.newStatus
       });
-      return false;
+
+      return {
+        saved: false,
+        errorMessage
+      };
     }
 
-    return true;
+    return {
+      saved: true,
+      errorMessage: null
+    };
   } catch (error) {
+    const errorMessage = sanitizeErrorMessage(error instanceof Error ? error.message : "Unknown review log error");
+
     console.warn("file_review_log_insert_failed", {
       code: null,
-      message: error instanceof Error ? error.message : "Unknown review log error",
+      message: errorMessage,
+      details: null,
+      hint: null,
       fileId: input.fileId,
+      previousStatus: input.previousStatus,
       newStatus: input.newStatus
     });
-    return false;
+
+    return {
+      saved: false,
+      errorMessage
+    };
   }
 }

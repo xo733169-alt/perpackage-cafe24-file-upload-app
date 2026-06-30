@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
       status
     });
 
-    await createFileReviewLog({
+    const reviewLogResult = await createFileReviewLog({
       fileId,
       previousStatus: result.previousStatus,
       newStatus: status,
@@ -81,7 +81,9 @@ export async function POST(request: NextRequest) {
         id: result.file.id,
         status: result.file.status,
         updated_at: result.file.updated_at
-      }
+      },
+      review_log_saved: reviewLogResult.saved,
+      review_log_error_message: reviewLogResult.errorMessage
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to update file status.";
