@@ -2,6 +2,7 @@ import { loginAdminAction, logoutAdminAction } from "@/app/admin/actions";
 import { getAdminAuthConfigStatus, isAdminAuthenticated } from "@/lib/admin/auth";
 import { getCafe24ConfigStatus } from "@/lib/cafe24/config";
 import { getCafe24Installation } from "@/lib/cafe24/token-store";
+import { listFileDownloadLogs, type FileDownloadLogRecord } from "@/lib/files/download-log-service";
 import { getFileById, listRecentFiles } from "@/lib/files/file-service";
 import type { UploadedFileRecord } from "@/lib/files/types";
 import { getSupabaseConfigStatus } from "@/lib/supabase/admin";
@@ -25,6 +26,7 @@ type RecentUploadedFile = Pick<
 type FileLookupState = {
   query: string;
   file: UploadedFileRecord | null;
+  downloadLogs: FileDownloadLogRecord[];
   message: string | null;
   status: "idle" | "found" | "not_found" | "empty" | "error";
 };
@@ -57,15 +59,23 @@ function formatBytes(value: number) {
   return `${value.toLocaleString()} bytes`;
 }
 
+function shortenUserAgent(userAgent: string | null) {
+  if (!userAgent) {
+    return "-";
+  }
+
+  return userAgent.length > 90 ? `${userAgent.slice(0, 90)}...` : userAgent;
+}
+
 async function lookupFileById(rawFileId: string, shouldSearch: boolean): Promise<FileLookupState> {
   const query = rawFileId.trim();
 
   if (!shouldSearch) {
-    return { query: "", file: null, message: null, status: "idle" };
+    return { query: "", file: null, downloadLogs: [], message: null, status: "idle" };
   }
 
   if (!query) {
-    return { query: rawFileId, file: null, message: "file_id를 입력해 주세요.", status: "empty" };
+    return { query: rawFileId, file: null, downloadLogs: [], message: "file_id를 입력해 주세요.", status: "empty" };
   }
 
   try {
@@ -75,16 +85,19 @@ async function lookupFileById(rawFileId: string, shouldSearch: boolean): Promise
       return {
         query,
         file: null,
+        downloadLogs: [],
         message: "해당 file_id의 업로드 파일을 찾지 못했습니다.",
         status: "not_found"
       };
     }
 
-    return { query, file, message: null, status: "found" };
+    const downloadLogs = await listFileDownloadLogs(file.id, 5);
+    return { query, file, downloadLogs, message: null, status: "found" };
   } catch (error) {
     return {
       query,
       file: null,
+      downloadLogs: [],
       message: error instanceof Error ? error.message : "파일 조회에 실패했습니다.",
       status: "error"
     };
@@ -153,6 +166,42 @@ function DownloadPanel({ file }: { file: UploadedFileRecord }) {
       ) : (
         <p style={{ marginBottom: 0 }}>다운로드에 필요한 저장소 정보가 아직 충분하지 않습니다.</p>
       )}
+    </div>
+  );
+}
+
+function DownloadLogPanel({ logs }: { logs: FileDownloadLogRecord[] }) {
+  return (
+    <div style={{ marginTop: 18 }}>
+      <h3>최근 다운로드 로그</h3>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>downloaded_at</th>
+              <th>result</th>
+              <th>ip_address</th>
+              <th>user_agent</th>
+              <th>error_message</th>
+            </tr>
+          </thead>
+          <tbody>
+            {logs.length ? logs.map((log) => (
+              <tr key={log.id}>
+                <td>{log.downloaded_at}</td>
+                <td><span className="status">{log.result}</span></td>
+                <td>{log.ip_address ?? "-"}</td>
+                <td>{shortenUserAgent(log.user_agent)}</td>
+                <td>{log.error_message ?? "-"}</td>
+              </tr>
+            )) : (
+              <tr>
+                <td colSpan={5}>아직 이 파일의 다운로드 로그가 없습니다.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -325,6 +374,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
               <FileLookupField label="updated_at" value={data.fileLookup.file.updated_at} />
             </div>
             <DownloadPanel file={data.fileLookup.file} />
+            <DownloadLogPanel logs={data.fileLookup.downloadLogs} />
           </div>
         ) : null}
       </section>

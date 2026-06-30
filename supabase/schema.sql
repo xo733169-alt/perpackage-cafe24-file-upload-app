@@ -45,6 +45,23 @@ create index if not exists files_product_no_idx on public.files (product_no);
 create index if not exists files_order_id_idx on public.files (order_id);
 create index if not exists files_created_at_idx on public.files (created_at desc);
 
+create table if not exists public.file_download_logs (
+  id uuid primary key default gen_random_uuid(),
+  file_id text,
+  original_filename text,
+  storage_bucket text,
+  storage_path text,
+  downloaded_at timestamptz not null default now(),
+  ip_address text,
+  user_agent text,
+  result text not null,
+  error_message text,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists file_download_logs_file_id_idx on public.file_download_logs (file_id);
+create index if not exists file_download_logs_downloaded_at_idx on public.file_download_logs (downloaded_at desc);
+
 -- Phase 1 note:
 -- Tokens are separated in cafe24_installations for future encryption.
 -- Before production, replace plain token columns with encrypted values or
