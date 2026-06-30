@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getFileById } from "@/lib/files/file-service";
+import type { UploadedFileRecord } from "@/lib/files/types";
 import { createSignedDownloadUrl } from "@/lib/storage/naver-object-storage";
 
 export const dynamic = "force-dynamic";
@@ -9,6 +10,10 @@ const SUPPORTED_STORAGE_PROVIDER = "naver-object-storage";
 
 function jsonError(message: string, status: number) {
   return NextResponse.json({ ok: false, message }, { status });
+}
+
+function getDownloadFilename(file: UploadedFileRecord) {
+  return file.original_filename?.trim() || file.stored_filename?.trim() || file.id;
 }
 
 export async function GET(request: Request) {
@@ -37,6 +42,7 @@ export async function GET(request: Request) {
     const signedUrl = await createSignedDownloadUrl({
       bucket: file.storage_bucket,
       key: file.storage_path,
+      filename: getDownloadFilename(file),
       expiresInSeconds: DOWNLOAD_EXPIRES_IN_SECONDS
     });
 

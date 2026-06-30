@@ -70,6 +70,7 @@ export async function uploadToNaverObjectStorage(input: {
 export async function createSignedDownloadUrl(input: {
   bucket: string;
   key: string;
+  filename?: string | null;
   expiresInSeconds?: number;
 }): Promise<string> {
   const expiresInSeconds = input.expiresInSeconds ?? 300;
@@ -83,8 +84,36 @@ export async function createSignedDownloadUrl(input: {
     client,
     new GetObjectCommand({
       Bucket: input.bucket,
-      Key: input.key
+      Key: input.key,
+      ResponseContentDisposition: input.filename
+        ? buildAttachmentContentDisposition(input.filename)
+        : undefined
     }),
     { expiresIn: expiresInSeconds }
+  );
+}
+
+function buildAttachmentContentDisposition(filename: string) {
+  const safeFilename = sanitizeDownloadFilename(filename);
+  const asciiFallback = safeFilename
+    .replace(/[^\x20-\x7E]/g, "_")
+    .replace(/["\\]/g, "_")
+    .trim() || "download-file";
+
+  return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodeRFC5987ValueChars(safeFilename)}`;
+}
+
+function sanitizeDownloadFilename(filename: string) {
+  return filename
+    .normalize("NFKC")
+    .replace(/[\r\n\0]/g, "")
+    .replace(/[\\/:*?"<>|]+/g, "-")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function encodeRFC5987ValueChars(value: string) {
+  return encodeURIComponent(value).replace(/['()*]/g, (char) =>
+    `%${char.charCodeAt(0).toString(16).toUpperCase()}`
   );
 }
