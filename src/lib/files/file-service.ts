@@ -25,11 +25,11 @@ function getUploadLimitBytes() {
 
 function assertAllowedFile(file: File) {
   if (file.size <= 0) {
-    throw new Error("파일이 비어 있습니다.");
+    throw new Error("File is empty.");
   }
 
   if (file.size > getUploadLimitBytes()) {
-    throw new Error("파일 용량이 현재 테스트 제한을 초과했습니다.");
+    throw new Error("File size exceeds the current upload limit.");
   }
 }
 
@@ -90,7 +90,7 @@ export async function uploadFile(input: FileUploadInput): Promise<UploadedFileRe
     .single();
 
   if (error) {
-    throw new Error("파일 메타데이터 저장에 실패했습니다.");
+    throw new Error("Failed to store uploaded file metadata.");
   }
 
   return data as UploadedFileRecord;
@@ -104,6 +104,43 @@ export async function listRecentFiles(limit = 20): Promise<UploadedFileRecord[]>
     .order("created_at", { ascending: false })
     .limit(limit);
 
-  if (error) throw new Error("최근 업로드 파일 목록을 불러오지 못했습니다.");
+  if (error) {
+    console.error("list_recent_files_failed", {
+      limit,
+      code: error.code ?? null,
+      message: error.message ?? null
+    });
+    throw new Error("Failed to load recent uploaded files.");
+  }
+
+  console.info("list_recent_files_result", {
+    limit,
+    count: data?.length ?? 0
+  });
+
   return (data ?? []) as UploadedFileRecord[];
+}
+
+export async function getFileById(fileId: string): Promise<UploadedFileRecord | null> {
+  const trimmedFileId = fileId.trim();
+  if (!trimmedFileId) {
+    return null;
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("files")
+    .select("*")
+    .eq("id", trimmedFileId)
+    .maybeSingle();
+
+  if (error) {
+    console.error("get_file_by_id_failed", {
+      code: error.code ?? null,
+      message: error.message ?? null
+    });
+    throw new Error("Failed to load uploaded file by file_id.");
+  }
+
+  return data ? (data as UploadedFileRecord) : null;
 }
