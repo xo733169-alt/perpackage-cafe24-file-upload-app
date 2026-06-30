@@ -1,3 +1,5 @@
+import { loginAdminAction, logoutAdminAction } from "@/app/admin/actions";
+import { getAdminAuthConfigStatus, isAdminAuthenticated } from "@/lib/admin/auth";
 import { getCafe24ConfigStatus } from "@/lib/cafe24/config";
 import { getCafe24Installation } from "@/lib/cafe24/token-store";
 import { getFileById, listRecentFiles } from "@/lib/files/file-service";
@@ -29,12 +31,13 @@ type FileLookupState = {
 
 type AdminPageProps = {
   searchParams?: {
+    auth?: string | string[];
     file_id?: string | string[];
   };
 };
 
-function readFileIdParam(searchParams?: AdminPageProps["searchParams"]) {
-  const value = searchParams?.file_id;
+function readParam(searchParams: AdminPageProps["searchParams"], key: "auth" | "file_id") {
+  const value = searchParams?.[key];
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
 }
 
@@ -154,8 +157,73 @@ function DownloadPanel({ file }: { file: UploadedFileRecord }) {
   );
 }
 
+function AdminConfigMissingPage() {
+  const status = getAdminAuthConfigStatus();
+
+  return (
+    <main className="grid" style={{ gap: 22 }}>
+      <section className="hero">
+        <p className="eyebrow">ADMIN</p>
+        <h1>관리자 접근 설정이 필요합니다</h1>
+        <p className="lead">
+          관리자 화면을 사용하려면 Vercel 환경변수에 관리자 비밀번호와 세션 secret을 등록한 뒤 Production을 다시 배포해야 합니다.
+        </p>
+      </section>
+      <section className="panel panel-pad">
+        <h2>필요한 환경변수</h2>
+        <div className="grid grid-2">
+          <div className="card">
+            <span>ADMIN_ACCESS_PASSWORD</span>
+            <strong>{status.hasPassword ? "present" : "missing"}</strong>
+          </div>
+          <div className="card">
+            <span>ADMIN_SESSION_SECRET</span>
+            <strong>{status.hasSessionSecret ? "present" : "missing"}</strong>
+          </div>
+        </div>
+        <p className="lead" style={{ marginTop: 16 }}>
+          실제 비밀번호와 secret 값은 화면에 표시하지 않습니다.
+        </p>
+      </section>
+    </main>
+  );
+}
+
+function AdminLoginPage({ authMessage }: { authMessage: string }) {
+  return (
+    <main className="grid" style={{ gap: 22 }}>
+      <section className="hero">
+        <p className="eyebrow">ADMIN</p>
+        <h1>관리자 로그인</h1>
+        <p className="lead">파일 조회와 다운로드는 관리자 비밀번호 확인 후 사용할 수 있습니다.</p>
+      </section>
+      <section className="panel panel-pad">
+        <form action={loginAdminAction} className="form">
+          <div className="field">
+            <label htmlFor="password">관리자 비밀번호</label>
+            <input id="password" name="password" type="password" autoComplete="current-password" />
+          </div>
+          <button className="button" type="submit">로그인</button>
+        </form>
+        {authMessage ? <div className="notice" style={{ marginTop: 16 }}>{authMessage}</div> : null}
+      </section>
+    </main>
+  );
+}
+
 export default async function AdminPage({ searchParams }: AdminPageProps) {
-  const fileIdQuery = readFileIdParam(searchParams);
+  const authStatus = getAdminAuthConfigStatus();
+  if (!authStatus.isConfigured) {
+    return <AdminConfigMissingPage />;
+  }
+
+  if (!isAdminAuthenticated()) {
+    const auth = readParam(searchParams, "auth");
+    const authMessage = auth === "failed" ? "비밀번호가 올바르지 않습니다." : "";
+    return <AdminLoginPage authMessage={authMessage} />;
+  }
+
+  const fileIdQuery = readParam(searchParams, "file_id");
   const data = await getAdminData(fileIdQuery, hasFileIdParam(searchParams));
   const isSupabaseConfigured = data.supabase.hasUrl && data.supabase.hasAnonKey && data.supabase.hasServiceRoleKey;
 
@@ -168,6 +236,9 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
           Phase 1 admin view checks connection status and uploaded file metadata. Tokens, storage secrets, and service
           role keys are never displayed.
         </p>
+        <form action={logoutAdminAction}>
+          <button className="button secondary" type="submit">로그아웃</button>
+        </form>
       </section>
 
       {data.dataError ? <div className="notice">{data.dataError}</div> : null}

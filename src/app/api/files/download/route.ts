@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { ADMIN_SESSION_COOKIE_NAME, verifyAdminSessionToken } from "@/lib/admin/auth";
 import { getFileById } from "@/lib/files/file-service";
 import type { UploadedFileRecord } from "@/lib/files/types";
 import { createSignedDownloadUrl } from "@/lib/storage/naver-object-storage";
@@ -16,7 +17,12 @@ function getDownloadFilename(file: UploadedFileRecord) {
   return file.original_filename?.trim() || file.stored_filename?.trim() || file.id;
 }
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
+  const sessionToken = request.cookies.get(ADMIN_SESSION_COOKIE_NAME)?.value;
+  if (!verifyAdminSessionToken(sessionToken)) {
+    return jsonError("Unauthorized.", 401);
+  }
+
   const url = new URL(request.url);
   const fileId = url.searchParams.get("file_id")?.trim();
 
