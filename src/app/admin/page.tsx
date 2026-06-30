@@ -4,7 +4,13 @@ import { CopyFileIdButton } from "@/components/CopyFileIdButton";
 import { getAdminAuthConfigStatus, isAdminAuthenticated } from "@/lib/admin/auth";
 import { getCafe24ConfigStatus } from "@/lib/cafe24/config";
 import { getCafe24Installation } from "@/lib/cafe24/token-store";
-import { listFileDownloadLogs, type FileDownloadLogRecord } from "@/lib/files/download-log-service";
+import {
+  listAdminDownloadLogs,
+  listFileDownloadLogs,
+  type AdminDownloadLogRecord,
+  type AdminDownloadLogResultFilter,
+  type FileDownloadLogRecord
+} from "@/lib/files/download-log-service";
 import {
   listFileStatusChangeLogs,
   type FileStatusChangeLogRecord
@@ -48,12 +54,24 @@ type AdminPageProps = {
     order_id?: string | string[];
     recent_status?: string | string[];
     recent_order_link?: string | string[];
+    download_file_id?: string | string[];
+    download_order_id?: string | string[];
+    download_result?: string | string[];
   };
 };
 
 function readParam(
   searchParams: AdminPageProps["searchParams"],
-  key: "auth" | "file_id" | "order_link" | "order_id" | "recent_status" | "recent_order_link"
+  key:
+    | "auth"
+    | "file_id"
+    | "order_link"
+    | "order_id"
+    | "recent_status"
+    | "recent_order_link"
+    | "download_file_id"
+    | "download_order_id"
+    | "download_result"
 ) {
   const value = searchParams?.[key];
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
@@ -85,6 +103,10 @@ function getRecentStatusFilter(value: string) {
 
 function getRecentOrderLinkFilter(value: string): RecentFileOrderLinkFilter {
   return value === "linked" || value === "unlinked" ? value : "all";
+}
+
+function getDownloadResultFilter(value: string): AdminDownloadLogResultFilter {
+  return value === "success" || value === "failed" ? value : "all";
 }
 
 function shortenUserAgent(userAgent: string | null) {
@@ -214,13 +236,17 @@ async function getAdminData(
   orderIdQuery: string,
   shouldSearchOrderId: boolean,
   recentStatusFilter: string,
-  recentOrderLinkFilter: RecentFileOrderLinkFilter
+  recentOrderLinkFilter: RecentFileOrderLinkFilter,
+  downloadFileIdFilter: string,
+  downloadOrderIdFilter: string,
+  downloadResultFilter: AdminDownloadLogResultFilter
 ) {
   const cafe24 = getCafe24ConfigStatus();
   const supabase = getSupabaseConfigStatus();
   const storage = getNaverStorageStatus();
   let installation = null;
   let files: UploadedFileRecord[] = [];
+  let adminDownloadLogs: AdminDownloadLogRecord[] = [];
   let dataError = null;
   const [fileLookup, orderLookup] = await Promise.all([
     lookupFileById(fileIdQuery, shouldSearchFileId),
@@ -242,7 +268,18 @@ async function getAdminData(
     dataError = dataError ?? (error instanceof Error ? error.message : "Failed to load recent files.");
   }
 
-  return { cafe24, supabase, storage, installation, files, dataError, fileLookup, orderLookup };
+  try {
+    adminDownloadLogs = await listAdminDownloadLogs({
+      fileId: downloadFileIdFilter,
+      orderId: downloadOrderIdFilter,
+      result: downloadResultFilter,
+      limit: 50
+    });
+  } catch (error) {
+    dataError = dataError ?? (error instanceof Error ? error.message : "Failed to load download logs.");
+  }
+
+  return { cafe24, supabase, storage, installation, files, adminDownloadLogs, dataError, fileLookup, orderLookup };
 }
 
 function FileLookupField({
@@ -326,6 +363,45 @@ function DownloadLogPanel({ logs }: { logs: FileDownloadLogRecord[] }) {
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+function AdminDownloadLogTable({ logs }: { logs: AdminDownloadLogRecord[] }) {
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>다운로드 일시</th>
+            <th>파일명</th>
+            <th>file_id</th>
+            <th>Cafe24 주문번호</th>
+            <th>결과</th>
+            <th>IP 주소</th>
+            <th>브라우저</th>
+            <th>오류 메시지</th>
+          </tr>
+        </thead>
+        <tbody>
+          {logs.length ? logs.map((log) => (
+            <tr key={log.id}>
+              <td>{log.downloaded_at}</td>
+              <td>{log.original_filename ?? "-"}</td>
+              <td>{log.file_id ? <CopyFileIdButton fileId={log.file_id} /> : "-"}</td>
+              <td>{log.order_id ?? "미연결"}</td>
+              <td><span className="status">{log.result}</span></td>
+              <td>{log.ip_address ?? "-"}</td>
+              <td>{shortenUserAgent(log.user_agent)}</td>
+              <td>{log.error_message ?? "-"}</td>
+            </tr>
+          )) : (
+            <tr>
+              <td colSpan={8}>조건에 맞는 다운로드 로그가 없습니다.</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -495,6 +571,9 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
   const orderIdQuery = readParam(searchParams, "order_id");
   const recentStatusFilter = getRecentStatusFilter(readParam(searchParams, "recent_status"));
   const recentOrderLinkFilter = getRecentOrderLinkFilter(readParam(searchParams, "recent_order_link"));
+  const downloadFileIdFilter = readParam(searchParams, "download_file_id").trim();
+  const downloadOrderIdFilter = readParam(searchParams, "download_order_id").trim();
+  const downloadResultFilter = getDownloadResultFilter(readParam(searchParams, "download_result"));
   const orderLinkMessage = getOrderLinkMessage(readParam(searchParams, "order_link"));
   const data = await getAdminData(
     fileIdQuery,
@@ -502,7 +581,10 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     orderIdQuery,
     hasOrderIdParam(searchParams),
     recentStatusFilter,
-    recentOrderLinkFilter
+    recentOrderLinkFilter,
+    downloadFileIdFilter,
+    downloadOrderIdFilter,
+    downloadResultFilter
   );
   const isSupabaseConfigured = data.supabase.hasUrl && data.supabase.hasAnonKey && data.supabase.hasServiceRoleKey;
 
@@ -658,6 +740,9 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
         <form className="form" method="get" style={{ marginTop: 16, marginBottom: 16 }}>
           {fileIdQuery ? <input name="file_id" type="hidden" value={fileIdQuery} /> : null}
           {orderIdQuery ? <input name="order_id" type="hidden" value={orderIdQuery} /> : null}
+          {downloadFileIdFilter ? <input name="download_file_id" type="hidden" value={downloadFileIdFilter} /> : null}
+          {downloadOrderIdFilter ? <input name="download_order_id" type="hidden" value={downloadOrderIdFilter} /> : null}
+          {downloadResultFilter !== "all" ? <input name="download_result" type="hidden" value={downloadResultFilter} /> : null}
           <div className="grid grid-3">
             <div className="field">
               <label htmlFor="recent_status">상태</label>
@@ -736,6 +821,54 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
             </tbody>
           </table>
         </div>
+      </section>
+
+      <section className="panel panel-pad">
+        <h2>전체 다운로드 로그</h2>
+        <p className="lead">
+          관리자가 파일을 다운로드한 이력을 최근 순으로 확인할 수 있습니다. file_id, Cafe24 주문번호, 결과 기준으로 필터링할 수 있습니다.
+        </p>
+        <form className="form" method="get" style={{ marginTop: 16, marginBottom: 16 }}>
+          {fileIdQuery ? <input name="file_id" type="hidden" value={fileIdQuery} /> : null}
+          {orderIdQuery ? <input name="order_id" type="hidden" value={orderIdQuery} /> : null}
+          {recentStatusFilter !== "all" ? <input name="recent_status" type="hidden" value={recentStatusFilter} /> : null}
+          {recentOrderLinkFilter !== "all" ? (
+            <input name="recent_order_link" type="hidden" value={recentOrderLinkFilter} />
+          ) : null}
+          <div className="grid grid-3">
+            <div className="field">
+              <label htmlFor="download_file_id">file_id</label>
+              <input
+                id="download_file_id"
+                name="download_file_id"
+                placeholder="file_id 전체 또는 일부를 입력하세요"
+                defaultValue={downloadFileIdFilter}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="download_order_id">Cafe24 주문번호</label>
+              <input
+                id="download_order_id"
+                name="download_order_id"
+                placeholder="Cafe24 주문번호를 입력하세요. 예: 20260630-0000029"
+                defaultValue={downloadOrderIdFilter}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="download_result">결과</label>
+              <select id="download_result" name="download_result" defaultValue={downloadResultFilter}>
+                <option value="all">전체</option>
+                <option value="success">성공</option>
+                <option value="failed">실패</option>
+              </select>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button className="button" type="submit">필터 적용</button>
+            <a className="button secondary" href="/admin">초기화</a>
+          </div>
+        </form>
+        <AdminDownloadLogTable logs={data.adminDownloadLogs} />
       </section>
     </main>
   );

@@ -17,6 +17,19 @@ export type FileDownloadLogRecord = {
   created_at: string;
 };
 
+export type AdminDownloadLogResultFilter = "all" | "success" | "failed";
+
+export type AdminDownloadLogFilters = {
+  fileId?: string | null;
+  orderId?: string | null;
+  result?: AdminDownloadLogResultFilter;
+  limit?: number;
+};
+
+export type AdminDownloadLogRecord = FileDownloadLogRecord & {
+  order_id: string | null;
+};
+
 export type CreateFileDownloadLogInput = {
   file?: UploadedFileRecord | null;
   fileId?: string | null;
@@ -32,6 +45,26 @@ function sanitizeErrorMessage(message?: string | null) {
   }
 
   return message.replace(/[\r\n\0]/g, " ").slice(0, 300);
+}
+
+function uniqueNonEmpty(values: Array<string | null | undefined>) {
+  return Array.from(new Set(values.filter((value): value is string => Boolean(value))));
+}
+
+function normalizeResultFilter(value?: AdminDownloadLogResultFilter | null): AdminDownloadLogResultFilter {
+  return value === "success" || value === "failed" ? value : "all";
+}
+
+function normalizeLimit(value?: number) {
+  if (!value || !Number.isFinite(value)) {
+    return 50;
+  }
+
+  return Math.min(Math.max(Math.trunc(value), 1), 100);
+}
+
+function isUuidLike(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 }
 
 export async function createFileDownloadLog(input: CreateFileDownloadLogInput) {
@@ -94,4 +127,104 @@ export async function listFileDownloadLogs(fileId: string, limit = 5): Promise<F
   }
 
   return (data ?? []) as FileDownloadLogRecord[];
+}
+
+export async function listAdminDownloadLogs(filters: AdminDownloadLogFilters = {}): Promise<AdminDownloadLogRecord[]> {
+  const fileIdFilter = filters.fileId?.trim() ?? "";
+  const orderIdFilter = filters.orderId?.trim() ?? "";
+  const resultFilter = normalizeResultFilter(filters.result);
+  const limit = normalizeLimit(filters.limit);
+  const shouldFilterFileIdInMemory = Boolean(fileIdFilter && !isUuidLike(fileIdFilter));
+  const queryLimit = shouldFilterFileIdInMemory ? 500 : limit;
+  const supabase = getSupabaseAdmin();
+  let orderFileIds: string[] | null = null;
+
+  if (orderIdFilter) {
+    const { data: orderFiles, error: orderFilesError } = await supabase
+      .from("files")
+      .select("id")
+      .eq("order_id", orderIdFilter);
+
+    if (orderFilesError) {
+      console.error("admin_download_logs_order_lookup_failed", {
+        code: orderFilesError.code ?? null,
+        message: sanitizeErrorMessage(orderFilesError.message)
+      });
+      throw new Error("Failed to filter download logs by order_id.");
+    }
+
+    orderFileIds = uniqueNonEmpty((orderFiles ?? []).map((file) => file.id as string | null));
+    if (!orderFileIds.length) {
+      return [];
+    }
+  }
+
+  let query = supabase
+    .from("file_download_logs")
+    .select("*")
+    .order("downloaded_at", { ascending: false })
+    .limit(queryLimit);
+
+  if (resultFilter === "success") {
+    query = query.eq("result", "success");
+  }
+
+  if (resultFilter === "failed") {
+    query = query.in("result", ["failed", "error"]);
+  }
+
+  if (orderFileIds?.length) {
+    query = query.in("file_id", orderFileIds);
+  }
+
+  if (fileIdFilter && isUuidLike(fileIdFilter)) {
+    query = query.eq("file_id", fileIdFilter);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error("admin_download_logs_load_failed", {
+      code: error.code ?? null,
+      message: sanitizeErrorMessage(error.message),
+      resultFilter,
+      hasFileIdFilter: Boolean(fileIdFilter),
+      hasOrderIdFilter: Boolean(orderIdFilter)
+    });
+    throw new Error("Failed to load download logs.");
+  }
+
+  let logs = (data ?? []) as FileDownloadLogRecord[];
+  if (shouldFilterFileIdInMemory) {
+    const normalizedFileIdFilter = fileIdFilter.toLowerCase();
+    logs = logs.filter((log) => (log.file_id ?? "").toLowerCase().includes(normalizedFileIdFilter));
+  }
+
+  logs = logs.slice(0, limit);
+
+  const fileIds = uniqueNonEmpty(logs.map((log) => log.file_id));
+  const orderMap = new Map<string, string | null>();
+
+  if (fileIds.length) {
+    const { data: files, error: filesError } = await supabase
+      .from("files")
+      .select("id, order_id")
+      .in("id", fileIds);
+
+    if (filesError) {
+      console.error("admin_download_logs_file_join_failed", {
+        code: filesError.code ?? null,
+        message: sanitizeErrorMessage(filesError.message)
+      });
+    } else {
+      for (const file of files ?? []) {
+        orderMap.set(file.id as string, (file.order_id as string | null) ?? null);
+      }
+    }
+  }
+
+  return logs.map((log) => ({
+    ...log,
+    order_id: log.file_id ? orderMap.get(log.file_id) ?? null : null
+  }));
 }
