@@ -1,4 +1,4 @@
-import { loginAdminAction, logoutAdminAction } from "@/app/admin/actions";
+import { linkFileOrderIdAction, loginAdminAction, logoutAdminAction } from "@/app/admin/actions";
 import { getAdminAuthConfigStatus, isAdminAuthenticated } from "@/lib/admin/auth";
 import { getCafe24ConfigStatus } from "@/lib/cafe24/config";
 import { getCafe24Installation } from "@/lib/cafe24/token-store";
@@ -35,10 +35,11 @@ type AdminPageProps = {
   searchParams?: {
     auth?: string | string[];
     file_id?: string | string[];
+    order_link?: string | string[];
   };
 };
 
-function readParam(searchParams: AdminPageProps["searchParams"], key: "auth" | "file_id") {
+function readParam(searchParams: AdminPageProps["searchParams"], key: "auth" | "file_id" | "order_link") {
   const value = searchParams?.[key];
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
 }
@@ -65,6 +66,23 @@ function shortenUserAgent(userAgent: string | null) {
   }
 
   return userAgent.length > 90 ? `${userAgent.slice(0, 90)}...` : userAgent;
+}
+
+function getOrderLinkMessage(status: string) {
+  switch (status) {
+    case "success":
+      return "주문번호를 연결했습니다.";
+    case "empty_order_id":
+      return "주문번호를 입력해 주세요.";
+    case "missing_file_id":
+      return "file_id를 확인할 수 없습니다.";
+    case "file_not_found":
+      return "해당 file_id의 업로드 파일을 찾지 못했습니다.";
+    case "failed":
+      return "주문번호 연결에 실패했습니다.";
+    default:
+      return "";
+  }
 }
 
 async function lookupFileById(rawFileId: string, shouldSearch: boolean): Promise<FileLookupState> {
@@ -206,6 +224,37 @@ function DownloadLogPanel({ logs }: { logs: FileDownloadLogRecord[] }) {
   );
 }
 
+function OrderLinkPanel({
+  file,
+  message
+}: {
+  file: UploadedFileRecord;
+  message: string;
+}) {
+  return (
+    <div className="notice" style={{ marginTop: 16 }}>
+      <h3 style={{ marginTop: 0 }}>주문번호 연결</h3>
+      <p>
+        현재 연결된 주문번호: <strong>{file.order_id ?? "미연결"}</strong>
+      </p>
+      <form action={linkFileOrderIdAction} className="form" style={{ marginTop: 12 }}>
+        <input name="file_id" type="hidden" value={file.id} />
+        <div className="field">
+          <label htmlFor="order_id">Cafe24 주문번호</label>
+          <input
+            id="order_id"
+            name="order_id"
+            placeholder="Cafe24 주문번호를 입력하세요. 예: 20260630-0000029"
+            defaultValue={file.order_id ?? ""}
+          />
+        </div>
+        <button className="button" type="submit">주문번호 연결</button>
+      </form>
+      {message ? <p style={{ marginBottom: 0 }}>{message}</p> : null}
+    </div>
+  );
+}
+
 function AdminConfigMissingPage() {
   const status = getAdminAuthConfigStatus();
 
@@ -273,6 +322,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
   }
 
   const fileIdQuery = readParam(searchParams, "file_id");
+  const orderLinkMessage = getOrderLinkMessage(readParam(searchParams, "order_link"));
   const data = await getAdminData(fileIdQuery, hasFileIdParam(searchParams));
   const isSupabaseConfigured = data.supabase.hasUrl && data.supabase.hasAnonKey && data.supabase.hasServiceRoleKey;
 
@@ -373,6 +423,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
               <FileLookupField label="created_at" value={data.fileLookup.file.created_at} />
               <FileLookupField label="updated_at" value={data.fileLookup.file.updated_at} />
             </div>
+            <OrderLinkPanel file={data.fileLookup.file} message={orderLinkMessage} />
             <DownloadPanel file={data.fileLookup.file} />
             <DownloadLogPanel logs={data.fileLookup.downloadLogs} />
           </div>

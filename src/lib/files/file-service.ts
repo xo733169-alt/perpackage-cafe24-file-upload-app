@@ -144,3 +144,44 @@ export async function getFileById(fileId: string): Promise<UploadedFileRecord | 
 
   return data ? (data as UploadedFileRecord) : null;
 }
+
+export async function updateFileOrderId(input: {
+  fileId: string;
+  orderId: string;
+}): Promise<UploadedFileRecord> {
+  const fileId = input.fileId.trim();
+  const orderId = input.orderId.trim();
+
+  if (!fileId) {
+    throw new Error("file_id is required.");
+  }
+
+  if (!orderId) {
+    throw new Error("order_id is required.");
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("files")
+    .update({
+      order_id: orderId,
+      updated_at: new Date().toISOString()
+    })
+    .eq("id", fileId)
+    .select("*")
+    .maybeSingle();
+
+  if (error) {
+    console.error("update_file_order_id_failed", {
+      code: error.code ?? null,
+      message: error.message ?? null
+    });
+    throw new Error("Failed to update uploaded file order_id.");
+  }
+
+  if (!data) {
+    throw new Error("Uploaded file was not found.");
+  }
+
+  return data as UploadedFileRecord;
+}
