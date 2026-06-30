@@ -1,4 +1,5 @@
-import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 export type StorageUploadResult = {
   provider: "naver-object-storage";
@@ -64,4 +65,26 @@ export async function uploadToNaverObjectStorage(input: {
     bucket: config.bucket,
     path: input.key
   };
+}
+
+export async function createSignedDownloadUrl(input: {
+  bucket: string;
+  key: string;
+  expiresInSeconds?: number;
+}): Promise<string> {
+  const expiresInSeconds = input.expiresInSeconds ?? 300;
+  const client = createClient();
+
+  if (!input.bucket.trim() || !input.key.trim()) {
+    throw new Error("Missing storage download target.");
+  }
+
+  return getSignedUrl(
+    client,
+    new GetObjectCommand({
+      Bucket: input.bucket,
+      Key: input.key
+    }),
+    { expiresIn: expiresInSeconds }
+  );
 }

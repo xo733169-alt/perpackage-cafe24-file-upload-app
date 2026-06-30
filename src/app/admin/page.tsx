@@ -42,9 +42,9 @@ function hasFileIdParam(searchParams?: AdminPageProps["searchParams"]) {
   return Boolean(searchParams && Object.prototype.hasOwnProperty.call(searchParams, "file_id"));
 }
 
-function formatNullable(value: string | number | null | undefined) {
+function formatEmpty(value: string | number | null | undefined, emptyText = "-") {
   if (value === null || value === undefined || value === "") {
-    return "미연결";
+    return emptyText;
   }
 
   return String(value);
@@ -112,11 +112,44 @@ async function getAdminData(fileIdQuery: string, shouldSearchFileId: boolean) {
   return { cafe24, supabase, storage, installation, files, dataError, fileLookup };
 }
 
-function FileLookupField({ label, value }: { label: string; value: string | number | null | undefined }) {
+function FileLookupField({
+  label,
+  value,
+  emptyText
+}: {
+  label: string;
+  value: string | number | null | undefined;
+  emptyText?: string;
+}) {
   return (
     <div className="card">
       <span>{label}</span>
-      <strong>{label === "file_size" && typeof value === "number" ? formatBytes(value) : formatNullable(value)}</strong>
+      <strong>{label === "file_size" && typeof value === "number" ? formatBytes(value) : formatEmpty(value, emptyText)}</strong>
+    </div>
+  );
+}
+
+function DownloadPanel({ file }: { file: UploadedFileRecord }) {
+  const canDownload =
+    file.storage_provider === "naver-object-storage" &&
+    Boolean(file.storage_bucket) &&
+    Boolean(file.storage_path);
+
+  return (
+    <div className="notice" style={{ marginTop: 16 }}>
+      <p style={{ marginTop: 0 }}>다운로드 링크는 짧은 시간 동안만 유효합니다.</p>
+      {canDownload ? (
+        <a
+          className="button"
+          href={`/api/files/download?file_id=${encodeURIComponent(file.id)}`}
+          rel="noreferrer"
+          target="_blank"
+        >
+          파일 다운로드
+        </a>
+      ) : (
+        <p style={{ marginBottom: 0 }}>다운로드에 필요한 저장소 정보가 아직 충분하지 않습니다.</p>
+      )}
     </div>
   );
 }
@@ -132,8 +165,8 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
         <p className="eyebrow">ADMIN</p>
         <h1>Perpackage Cafe24 file upload admin</h1>
         <p className="lead">
-          Phase 1 admin view checks connection status and recent uploaded file metadata. Tokens, storage secrets, and
-          service role keys are never displayed.
+          Phase 1 admin view checks connection status and uploaded file metadata. Tokens, storage secrets, and service
+          role keys are never displayed.
         </p>
       </section>
 
@@ -215,11 +248,12 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
               <FileLookupField label="storage_bucket" value={data.fileLookup.file.storage_bucket} />
               <FileLookupField label="storage_path" value={data.fileLookup.file.storage_path} />
               <FileLookupField label="status" value={data.fileLookup.file.status} />
-              <FileLookupField label="order_id" value={data.fileLookup.file.order_id} />
-              <FileLookupField label="inquiry_id" value={data.fileLookup.file.inquiry_id} />
+              <FileLookupField label="order_id" value={data.fileLookup.file.order_id} emptyText="미연결" />
+              <FileLookupField label="inquiry_id" value={data.fileLookup.file.inquiry_id} emptyText="미연결" />
               <FileLookupField label="created_at" value={data.fileLookup.file.created_at} />
               <FileLookupField label="updated_at" value={data.fileLookup.file.updated_at} />
             </div>
+            <DownloadPanel file={data.fileLookup.file} />
           </div>
         ) : null}
       </section>
