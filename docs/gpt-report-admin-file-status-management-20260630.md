@@ -66,13 +66,13 @@ POST /api/admin/files/status
 2. `file_id`, `status` 입력값 검증
 3. 허용된 상태값인지 확인
 4. Supabase `files.status`, `files.updated_at` 업데이트
-5. `file_review_logs`에 상태 변경 로그 저장
+5. `file_status_change_logs`에 상태 변경 로그 저장
 
 인증되지 않은 요청은 `401 Unauthorized`로 차단한다.
 
 ## 5. 검수 로그 저장
 
-상태 변경 시 `file_review_logs` 테이블에 아래 값을 저장하도록 구성했다.
+상태 변경 시 Cafe24 파일 업로드 앱 전용 `file_status_change_logs` 테이블에 아래 값을 저장하도록 구성했다.
 
 - `file_id`
 - `previous_status`
@@ -103,14 +103,16 @@ POST /api/admin/files/status
 
 ## 7. DB 반영 필요 사항
 
-`supabase/schema.sql`에 `file_review_logs` 테이블 정의를 추가했다.
+`supabase/schema.sql`에 `file_status_change_logs` 테이블 정의를 추가했다.
 
 운영 Supabase에 아직 테이블이 없다면 아래 테이블 생성 SQL을 적용해야 상태 변경 로그가 저장된다.
 
+기존 `file_review_logs`는 다른 업로드 시스템의 `upload_projects`, `uploaded_files`를 참조하는 테이블이므로 이 앱에서는 사용하지 않는다.
+
 ```sql
-create table if not exists public.file_review_logs (
+create table if not exists public.file_status_change_logs (
   id uuid primary key default gen_random_uuid(),
-  file_id text not null,
+  file_id uuid not null references public.files(id) on delete cascade,
   previous_status text,
   new_status text not null,
   memo text,
@@ -120,8 +122,11 @@ create table if not exists public.file_review_logs (
   created_at timestamptz not null default now()
 );
 
-create index if not exists file_review_logs_file_id_idx on public.file_review_logs (file_id);
-create index if not exists file_review_logs_created_at_idx on public.file_review_logs (created_at desc);
+create index if not exists file_status_change_logs_file_id_idx
+on public.file_status_change_logs (file_id);
+
+create index if not exists file_status_change_logs_created_at_idx
+on public.file_status_change_logs (created_at desc);
 ```
 
 ## 8. 유지한 기존 기능
@@ -182,7 +187,7 @@ node node_modules/next/dist/bin/next build
 2. file_id로 파일 검색
 3. 상태를 `파일 확인 중`으로 변경
 4. Supabase `files.status`가 `reviewing`으로 변경됐는지 확인
-5. `file_review_logs`에 상태 변경 로그가 저장됐는지 확인
+5. `file_status_change_logs`에 상태 변경 로그가 저장됐는지 확인
 6. 같은 파일을 `파일 확인 완료`로 변경
 7. 주문번호 검색 결과에서도 `파일 확인 완료`로 표시되는지 확인
 8. 기존 파일 다운로드 버튼이 계속 작동하는지 확인
@@ -190,13 +195,13 @@ node node_modules/next/dist/bin/next build
 
 ## 12. 남은 한계
 
-- `file_review_logs`를 `/admin` 화면에 표시하는 UI는 아직 만들지 않았다.
+- `file_status_change_logs`를 `/admin` 화면에 표시하는 UI는 아직 만들지 않았다.
 - 상태 변경 권한은 현재 단일 관리자 세션 기준이며, 사용자별 관리자 계정 구분은 없다.
 - 상태 변경 로그 저장 실패는 `console.warn`만 남기므로, 운영 모니터링을 강화하려면 추후 관리자 화면 또는 로그 대시보드가 필요하다.
 
 ## 13. 다음 단계 제안
 
-1. Supabase 운영 DB에 `file_review_logs` 테이블 생성 SQL 적용
+1. Supabase 운영 DB에 `file_status_change_logs` 테이블 생성 SQL 적용
 2. Vercel Production 배포
 3. 실제 `/admin`에서 상태 변경 왕복 테스트
 4. 상태 변경 로그를 `/admin` 파일 상세 카드에 최근 5개 정도 표시

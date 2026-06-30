@@ -41,13 +41,13 @@ export async function createFileReviewLog(input: CreateFileReviewLogInput): Prom
   try {
     const supabase = getSupabaseAdmin();
     const { error } = await supabase
-      .from("file_review_logs")
+      .from("file_status_change_logs")
       .insert(payload);
 
     if (error) {
       const errorMessage = sanitizeErrorMessage(error.message);
 
-      console.warn("file_review_log_insert_failed", {
+      console.warn("file_status_change_log_insert_failed", {
         code: error.code ?? null,
         message: errorMessage,
         details: sanitizeErrorMessage(error.details),
@@ -70,7 +70,7 @@ export async function createFileReviewLog(input: CreateFileReviewLogInput): Prom
   } catch (error) {
     const errorMessage = sanitizeErrorMessage(error instanceof Error ? error.message : "Unknown review log error");
 
-    console.warn("file_review_log_insert_failed", {
+    console.warn("file_status_change_log_insert_failed", {
       code: null,
       message: errorMessage,
       details: null,

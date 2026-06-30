@@ -62,9 +62,9 @@ create table if not exists public.file_download_logs (
 create index if not exists file_download_logs_file_id_idx on public.file_download_logs (file_id);
 create index if not exists file_download_logs_downloaded_at_idx on public.file_download_logs (downloaded_at desc);
 
-create table if not exists public.file_review_logs (
+create table if not exists public.file_status_change_logs (
   id uuid primary key default gen_random_uuid(),
-  file_id text not null,
+  file_id uuid not null references public.files(id) on delete cascade,
   previous_status text,
   new_status text not null,
   memo text,
@@ -74,8 +74,8 @@ create table if not exists public.file_review_logs (
   created_at timestamptz not null default now()
 );
 
-create index if not exists file_review_logs_file_id_idx on public.file_review_logs (file_id);
-create index if not exists file_review_logs_created_at_idx on public.file_review_logs (created_at desc);
+create index if not exists file_status_change_logs_file_id_idx on public.file_status_change_logs (file_id);
+create index if not exists file_status_change_logs_created_at_idx on public.file_status_change_logs (created_at desc);
 
 -- Phase 1 note:
 -- Tokens are separated in cafe24_installations for future encryption.
