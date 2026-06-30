@@ -1,4 +1,5 @@
 import { nanoid } from "nanoid";
+import { isKnownFileStatus } from "@/lib/files/file-status";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { uploadToNaverObjectStorage } from "@/lib/storage/naver-object-storage";
 import type { FileUploadInput, UploadedFileRecord } from "./types";
@@ -208,4 +209,57 @@ export async function updateFileOrderId(input: {
   }
 
   return data as UploadedFileRecord;
+}
+
+export async function updateFileStatus(input: {
+  fileId: string;
+  status: string;
+}): Promise<{ file: UploadedFileRecord; previousStatus: string | null }> {
+  const fileId = input.fileId.trim();
+  const status = input.status.trim();
+
+  if (!fileId) {
+    throw new Error("file_id is required.");
+  }
+
+  if (!status) {
+    throw new Error("status is required.");
+  }
+
+  if (!isKnownFileStatus(status)) {
+    throw new Error("Unsupported file status.");
+  }
+
+  const previousFile = await getFileById(fileId);
+  if (!previousFile) {
+    throw new Error("Uploaded file was not found.");
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("files")
+    .update({
+      status,
+      updated_at: new Date().toISOString()
+    })
+    .eq("id", fileId)
+    .select("*")
+    .maybeSingle();
+
+  if (error) {
+    console.error("update_file_status_failed", {
+      code: error.code ?? null,
+      message: error.message ?? null
+    });
+    throw new Error("Failed to update uploaded file status.");
+  }
+
+  if (!data) {
+    throw new Error("Uploaded file was not found.");
+  }
+
+  return {
+    file: data as UploadedFileRecord,
+    previousStatus: previousFile.status ?? null
+  };
 }

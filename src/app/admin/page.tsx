@@ -1,8 +1,10 @@
 import { linkFileOrderIdAction, loginAdminAction, logoutAdminAction } from "@/app/admin/actions";
+import { AdminFileStatusForm } from "@/components/AdminFileStatusForm";
 import { getAdminAuthConfigStatus, isAdminAuthenticated } from "@/lib/admin/auth";
 import { getCafe24ConfigStatus } from "@/lib/cafe24/config";
 import { getCafe24Installation } from "@/lib/cafe24/token-store";
 import { listFileDownloadLogs, type FileDownloadLogRecord } from "@/lib/files/download-log-service";
+import { getFileStatusLabel } from "@/lib/files/file-status";
 import { getFileById, listFilesByOrderId, listRecentFiles } from "@/lib/files/file-service";
 import type { UploadedFileRecord } from "@/lib/files/types";
 import { getSupabaseConfigStatus } from "@/lib/supabase/admin";
@@ -209,10 +211,17 @@ function FileLookupField({
   value: string | number | null | undefined;
   emptyText?: string;
 }) {
+  const formattedValue =
+    label === "file_size" && typeof value === "number"
+      ? formatBytes(value)
+      : label === "status"
+        ? getFileStatusLabel(typeof value === "string" ? value : null)
+        : formatEmpty(value, emptyText);
+
   return (
     <div className="card">
       <span>{label}</span>
-      <strong>{label === "file_size" && typeof value === "number" ? formatBytes(value) : formatEmpty(value, emptyText)}</strong>
+      <strong>{formattedValue}</strong>
     </div>
   );
 }
@@ -324,6 +333,7 @@ function OrderFileResultCard({ file }: { file: UploadedFileRecord }) {
         <FileLookupField label="created_at" value={file.created_at} />
         <FileLookupField label="updated_at" value={file.updated_at} />
       </div>
+      <AdminFileStatusForm fileId={file.id} currentStatus={file.status} />
       <DownloadPanel file={file} />
     </div>
   );
@@ -538,6 +548,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
               <FileLookupField label="updated_at" value={data.fileLookup.file.updated_at} />
             </div>
             <OrderLinkPanel file={data.fileLookup.file} message={orderLinkMessage} />
+            <AdminFileStatusForm fileId={data.fileLookup.file.id} currentStatus={data.fileLookup.file.status} />
             <DownloadPanel file={data.fileLookup.file} />
             <DownloadLogPanel logs={data.fileLookup.downloadLogs} />
           </div>
@@ -565,7 +576,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                   <td>{file.mall_id ?? "-"} / {file.product_no ?? "-"}</td>
                   <td>{file.file_size.toLocaleString()} bytes</td>
                   <td>{file.mime_type}</td>
-                  <td><span className="status">{file.status}</span></td>
+                  <td><span className="status">{getFileStatusLabel(file.status)}</span></td>
                   <td>{file.created_at}</td>
                 </tr>
               )) : (
