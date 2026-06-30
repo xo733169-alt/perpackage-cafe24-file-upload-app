@@ -1,13 +1,80 @@
 import { NextRequest, NextResponse } from "next/server";
 import { uploadFile } from "@/lib/files/file-service";
 
+const allowedUploadOrigins = new Set([
+  "https://peerl.cafe24.com",
+  "https://www.peerl.cafe24.com",
+  "https://perpackage-cafe24-file-upload-app.vercel.app"
+]);
+
+function getAllowedOrigin(request: NextRequest) {
+  const origin = request.headers.get("origin");
+  if (!origin) {
+    return null;
+  }
+
+  return allowedUploadOrigins.has(origin) ? origin : null;
+}
+
+function getCorsHeaders(request: NextRequest) {
+  const allowedOrigin = getAllowedOrigin(request);
+  const headers: Record<string, string> = {
+    "Access-Control-Allow-Methods": "OPTIONS, POST",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Max-Age": "86400",
+    Vary: "Origin"
+  };
+
+  if (allowedOrigin) {
+    headers["Access-Control-Allow-Origin"] = allowedOrigin;
+  }
+
+  return headers;
+}
+
+function jsonWithCors(
+  request: NextRequest,
+  body: Parameters<typeof NextResponse.json>[0],
+  init?: ResponseInit
+) {
+  return NextResponse.json(body, {
+    ...init,
+    headers: {
+      ...getCorsHeaders(request),
+      ...(init?.headers ?? {})
+    }
+  });
+}
+
+export async function OPTIONS(request: NextRequest) {
+  const origin = request.headers.get("origin");
+  const headers = getCorsHeaders(request);
+
+  if (origin && !getAllowedOrigin(request)) {
+    return new NextResponse(null, { status: 403, headers });
+  }
+
+  return new NextResponse(null, { status: 204, headers });
+}
+
 export async function POST(request: NextRequest) {
+  const origin = request.headers.get("origin");
+
+  if (origin && !getAllowedOrigin(request)) {
+    return jsonWithCors(
+      request,
+      { ok: false, message: "This upload origin is not allowed." },
+      { status: 403 }
+    );
+  }
+
   try {
     const formData = await request.formData();
     const file = formData.get("file");
 
     if (!(file instanceof File)) {
-      return NextResponse.json(
+      return jsonWithCors(
+        request,
         { ok: false, message: "업로드할 파일을 선택해 주세요." },
         { status: 400 }
       );
@@ -23,7 +90,7 @@ export async function POST(request: NextRequest) {
       customerIdentifier: formData.get("customer_identifier")?.toString() ?? null
     });
 
-    return NextResponse.json({
+    return jsonWithCors(request, {
       ok: true,
       file: {
         id: uploaded.id,
@@ -37,7 +104,8 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error("file_upload_failed", error instanceof Error ? error.message : "unknown_error");
-    return NextResponse.json(
+    return jsonWithCors(
+      request,
       { ok: false, message: error instanceof Error ? error.message : "파일 업로드에 실패했습니다." },
       { status: 500 }
     );
