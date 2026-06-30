@@ -96,6 +96,7 @@
       "#app-perpackage-product-upload .ppu-result{margin:10px 0 0;padding:10px;border-radius:6px;background:#fff;border:1px solid #d9e2f2;font-size:13px;line-height:1.6}",
       "#app-perpackage-product-upload .ppu-error{color:#b42318}",
       "#app-perpackage-product-upload .ppu-success{color:#155724}",
+      "#app-perpackage-product-upload .ppu-warning{color:#9a6700}",
       "@media (max-width:480px){#app-perpackage-product-upload{padding:14px}#app-perpackage-product-upload .ppu-button{max-width:none}}"
     ].join("\n");
     document.head.appendChild(style);
@@ -122,6 +123,273 @@
     }
 
     return document.body;
+  }
+
+  function normalizeSearchText(value) {
+    return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+  }
+
+  function compactSearchText(value) {
+    return normalizeSearchText(value).replace(/[\s\[\]\(\):：*＊_-]+/g, "");
+  }
+
+  function includesFileIdLabel(value) {
+    var text = normalizeSearchText(value);
+    var compactText = compactSearchText(value);
+    var keywords = [
+      "\uc5c5\ub85c\ub4dc \ud30c\uc77c id",
+      "\uc5c5\ub85c\ub4dc \ud30c\uc77c id[\ud544\uc218]",
+      "\ud30c\uc77c\uc811\uc218\ubc88\ud638",
+      "\ud30c\uc77c id",
+      "file_id",
+      "file id"
+    ];
+    if (!text) return false;
+
+    for (var i = 0; i < keywords.length; i += 1) {
+      if (text.indexOf(normalizeSearchText(keywords[i])) !== -1) return true;
+      if (compactText.indexOf(compactSearchText(keywords[i])) !== -1) return true;
+    }
+
+    return false;
+  }
+
+  function isFileIdFieldCandidate(element) {
+    if (!element) return false;
+    var tagName = String(element.tagName || "").toLowerCase();
+    if (tagName !== "input" && tagName !== "textarea") return false;
+    if (element.closest && element.closest("#" + WIDGET_ID)) return false;
+    if (element.disabled || element.readOnly) return false;
+
+    if (tagName === "input") {
+      var inputType = String(element.getAttribute("type") || "text").toLowerCase();
+      var blockedTypes = ["button", "checkbox", "file", "hidden", "image", "radio", "reset", "submit"];
+      for (var i = 0; i < blockedTypes.length; i += 1) {
+        if (inputType === blockedTypes[i]) return false;
+      }
+    }
+
+    return true;
+  }
+
+  function getInputSearchText(element) {
+    var parts = [];
+    var attributes = ["name", "id", "placeholder", "title", "aria-label"];
+
+    for (var i = 0; i < attributes.length; i += 1) {
+      var attrValue = element.getAttribute(attributes[i]);
+      if (attrValue) parts.push(attrValue);
+    }
+
+    if (element.id) {
+      try {
+        var label = document.querySelector("label[for='" + cssEscape(element.id) + "']");
+        if (label) parts.push(label.textContent);
+      } catch (error) {
+        // Ignore invalid selectors from third-party theme markup.
+      }
+    }
+
+    var parentLabel = element.closest && element.closest("label");
+    if (parentLabel) parts.push(parentLabel.textContent);
+
+    var row = element.closest && element.closest("tr");
+    if (row) {
+      var rowHeader = row.querySelector("th");
+      if (rowHeader) parts.push(rowHeader.textContent);
+    }
+
+    var fieldContainer = element.closest && element.closest("li, dd, td, div");
+    if (fieldContainer) {
+      var containerLabel = fieldContainer.querySelector("label, th, dt, .title, .label");
+      if (containerLabel) parts.push(containerLabel.textContent);
+    }
+
+    return parts.join(" ");
+  }
+
+  function findFirstUsableField(root) {
+    if (!root) return null;
+
+    if (isFileIdFieldCandidate(root)) {
+      return root;
+    }
+
+    if (!root.querySelectorAll) return null;
+
+    var fields = root.querySelectorAll("input, textarea");
+    for (var i = 0; i < fields.length; i += 1) {
+      if (isFileIdFieldCandidate(fields[i])) {
+        return fields[i];
+      }
+    }
+
+    return null;
+  }
+
+  function resolveConfiguredFileIdInput() {
+    if (!CONFIG.fileIdInputSelector) return null;
+
+    try {
+      var configuredTarget = document.querySelector(CONFIG.fileIdInputSelector);
+      var configuredInput = findFirstUsableField(configuredTarget);
+      if (configuredInput) {
+        return {
+          element: configuredInput,
+          source: "config:fileIdInputSelector"
+        };
+      }
+    } catch (error) {
+      // Fall back to automatic field discovery below.
+    }
+
+    return null;
+  }
+
+  function cssEscape(value) {
+    if (window.CSS && typeof window.CSS.escape === "function") {
+      return window.CSS.escape(value);
+    }
+
+    return String(value).replace(/'/g, "\\'");
+  }
+
+  function findFileIdInputByAttributes() {
+    var fields = document.querySelectorAll("input, textarea");
+    for (var i = 0; i < fields.length; i += 1) {
+      var field = fields[i];
+      if (!isFileIdFieldCandidate(field)) continue;
+
+      var searchText = getInputSearchText(field);
+
+      if (includesFileIdLabel(searchText)) {
+        return {
+          element: field,
+          source: "auto:" + normalizeSearchText(searchText).slice(0, 80)
+        };
+      }
+    }
+
+    return null;
+  }
+
+  function findFieldNearLabelElement(labelElement) {
+    if (!labelElement) return null;
+
+    var forAttribute = labelElement.getAttribute && labelElement.getAttribute("for");
+    if (forAttribute) {
+      var controlledField = document.getElementById(forAttribute);
+      if (isFileIdFieldCandidate(controlledField)) return controlledField;
+    }
+
+    if (String(labelElement.tagName || "").toLowerCase() === "label") {
+      var fieldInsideLabel = findFirstUsableField(labelElement);
+      if (fieldInsideLabel) return fieldInsideLabel;
+    }
+
+    var row = labelElement.closest && labelElement.closest("tr");
+    if (row) {
+      var fieldInRow = findFirstUsableField(row);
+      if (fieldInRow) return fieldInRow;
+
+      var nextCell = labelElement.closest("th, td");
+      while (nextCell && nextCell.nextElementSibling) {
+        nextCell = nextCell.nextElementSibling;
+        var fieldInNextCell = findFirstUsableField(nextCell);
+        if (fieldInNextCell) return fieldInNextCell;
+      }
+    }
+
+    var containerSelectors = ["li", "dd", "dl", "table", "tbody", "div"];
+    for (var i = 0; i < containerSelectors.length; i += 1) {
+      var container = labelElement.closest && labelElement.closest(containerSelectors[i]);
+      var fieldInContainer = findFirstUsableField(container);
+      if (fieldInContainer) return fieldInContainer;
+    }
+
+    return null;
+  }
+
+  function findFileIdInputByLabelText() {
+    var labelElements = document.querySelectorAll("th, label, dt, strong, span");
+
+    for (var i = 0; i < labelElements.length; i += 1) {
+      var labelElement = labelElements[i];
+      if (labelElement.closest && labelElement.closest("#" + WIDGET_ID)) continue;
+      if (!includesFileIdLabel(labelElement.textContent)) continue;
+
+      var field = findFieldNearLabelElement(labelElement);
+      if (field) {
+        return {
+          element: field,
+          source: "label:" + normalizeSearchText(labelElement.textContent).slice(0, 80)
+        };
+      }
+    }
+
+    return null;
+  }
+
+  function findFileIdInput() {
+    return (
+      resolveConfiguredFileIdInput() ||
+      findFileIdInputByAttributes() ||
+      findFileIdInputByLabelText()
+    );
+  }
+
+  function setFieldValue(element, value) {
+    var tagName = String(element.tagName || "").toLowerCase();
+    var prototype = tagName === "textarea" ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+    var descriptor = Object.getOwnPropertyDescriptor(prototype, "value");
+
+    if (descriptor && descriptor.set) {
+      descriptor.set.call(element, value);
+    } else {
+      element.value = value;
+    }
+
+    element.setAttribute("value", value);
+  }
+
+  function applyFileIdToCafe24Input(fileId) {
+    if (!fileId) {
+      return {
+        status: "not_found",
+        source: "missing_file_id"
+      };
+    }
+
+    var match = findFileIdInput();
+    if (!match || !match.element) {
+      return {
+        status: "not_found",
+        source: "no_matching_input"
+      };
+    }
+
+    setFieldValue(match.element, fileId);
+    dispatchFieldEvent(match.element, "input");
+    dispatchFieldEvent(match.element, "change");
+    dispatchFieldEvent(match.element, "blur");
+
+    return {
+      status: "success",
+      source: match.source
+    };
+  }
+
+  function dispatchFieldEvent(element, eventName) {
+    var event;
+
+    if (typeof Event === "function") {
+      event = new Event(eventName, { bubbles: true, cancelable: true });
+    } else {
+      event = document.createEvent("Event");
+      event.initEvent(eventName, true, true);
+    }
+
+    element.dispatchEvent(event);
   }
 
   function renderWidget() {
@@ -198,14 +466,20 @@
         })
         .then(function (json) {
           var uploaded = json.file || {};
+          var fileId = uploaded.id || json.id || "";
+          var cafe24InputResult = applyFileIdToCafe24Input(fileId);
           status.className = "ppu-status ppu-success";
-          status.textContent = "업로드가 완료되었습니다.";
+          status.textContent = cafe24InputResult.status === "success"
+            ? "업로드가 완료되었고 주문 연결용 파일 ID가 입력되었습니다."
+            : "업로드가 완료되었습니다. 주문 연결용 입력 옵션은 찾지 못했습니다.";
           result.hidden = false;
           result.innerHTML = [
             "<strong>업로드 정보</strong>",
-            "<br>file_id: " + escapeHtml(uploaded.id || "-"),
+            "<br>file_id: " + escapeHtml(fileId || "-"),
             "<br>original_filename: " + escapeHtml(uploaded.original_filename || "-"),
-            "<br>status: " + escapeHtml(uploaded.status || "-")
+            "<br>status: " + escapeHtml(uploaded.status || "-"),
+            "<br>Cafe24 입력 옵션 반영 여부: " + escapeHtml(cafe24InputResult.status),
+            "<br>input source: " + escapeHtml(cafe24InputResult.source || "-")
           ].join("");
           form.reset();
         })
