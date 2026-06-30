@@ -145,6 +145,30 @@ export async function getFileById(fileId: string): Promise<UploadedFileRecord | 
   return data ? (data as UploadedFileRecord) : null;
 }
 
+export async function listFilesByOrderId(orderId: string): Promise<UploadedFileRecord[]> {
+  const trimmedOrderId = orderId.trim();
+  if (!trimmedOrderId) {
+    return [];
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("files")
+    .select("*")
+    .eq("order_id", trimmedOrderId)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("list_files_by_order_id_failed", {
+      code: error.code ?? null,
+      message: error.message ?? null
+    });
+    throw new Error("Failed to load uploaded files by order_id.");
+  }
+
+  return (data ?? []) as UploadedFileRecord[];
+}
+
 export async function updateFileOrderId(input: {
   fileId: string;
   orderId: string;

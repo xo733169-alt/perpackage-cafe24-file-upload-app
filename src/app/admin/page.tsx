@@ -3,7 +3,7 @@ import { getAdminAuthConfigStatus, isAdminAuthenticated } from "@/lib/admin/auth
 import { getCafe24ConfigStatus } from "@/lib/cafe24/config";
 import { getCafe24Installation } from "@/lib/cafe24/token-store";
 import { listFileDownloadLogs, type FileDownloadLogRecord } from "@/lib/files/download-log-service";
-import { getFileById, listRecentFiles } from "@/lib/files/file-service";
+import { getFileById, listFilesByOrderId, listRecentFiles } from "@/lib/files/file-service";
 import type { UploadedFileRecord } from "@/lib/files/types";
 import { getSupabaseConfigStatus } from "@/lib/supabase/admin";
 import { getNaverStorageStatus } from "@/lib/storage/naver-object-storage";
@@ -31,21 +31,33 @@ type FileLookupState = {
   status: "idle" | "found" | "not_found" | "empty" | "error";
 };
 
+type OrderLookupState = {
+  query: string;
+  files: UploadedFileRecord[];
+  message: string | null;
+  status: "idle" | "found" | "not_found" | "empty" | "error";
+};
+
 type AdminPageProps = {
   searchParams?: {
     auth?: string | string[];
     file_id?: string | string[];
     order_link?: string | string[];
+    order_id?: string | string[];
   };
 };
 
-function readParam(searchParams: AdminPageProps["searchParams"], key: "auth" | "file_id" | "order_link") {
+function readParam(searchParams: AdminPageProps["searchParams"], key: "auth" | "file_id" | "order_link" | "order_id") {
   const value = searchParams?.[key];
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
 }
 
 function hasFileIdParam(searchParams?: AdminPageProps["searchParams"]) {
   return Boolean(searchParams && Object.prototype.hasOwnProperty.call(searchParams, "file_id"));
+}
+
+function hasOrderIdParam(searchParams?: AdminPageProps["searchParams"]) {
+  return Boolean(searchParams && Object.prototype.hasOwnProperty.call(searchParams, "order_id"));
 }
 
 function formatEmpty(value: string | number | null | undefined, emptyText = "-") {
@@ -122,14 +134,56 @@ async function lookupFileById(rawFileId: string, shouldSearch: boolean): Promise
   }
 }
 
-async function getAdminData(fileIdQuery: string, shouldSearchFileId: boolean) {
+async function lookupFilesByOrderId(rawOrderId: string, shouldSearch: boolean): Promise<OrderLookupState> {
+  const query = rawOrderId.trim();
+
+  if (!shouldSearch) {
+    return { query: "", files: [], message: null, status: "idle" };
+  }
+
+  if (!query) {
+    return { query: rawOrderId, files: [], message: "주문번호를 입력해 주세요.", status: "empty" };
+  }
+
+  try {
+    const files = await listFilesByOrderId(query);
+
+    if (!files.length) {
+      return {
+        query,
+        files: [],
+        message: "해당 주문번호에 연결된 업로드 파일이 없습니다.",
+        status: "not_found"
+      };
+    }
+
+    return { query, files, message: null, status: "found" };
+  } catch (error) {
+    return {
+      query,
+      files: [],
+      message: error instanceof Error ? error.message : "주문번호 기준 파일 조회에 실패했습니다.",
+      status: "error"
+    };
+  }
+}
+
+async function getAdminData(
+  fileIdQuery: string,
+  shouldSearchFileId: boolean,
+  orderIdQuery: string,
+  shouldSearchOrderId: boolean
+) {
   const cafe24 = getCafe24ConfigStatus();
   const supabase = getSupabaseConfigStatus();
   const storage = getNaverStorageStatus();
   let installation = null;
   let files: RecentUploadedFile[] = [];
   let dataError = null;
-  const fileLookup = await lookupFileById(fileIdQuery, shouldSearchFileId);
+  const [fileLookup, orderLookup] = await Promise.all([
+    lookupFileById(fileIdQuery, shouldSearchFileId),
+    lookupFilesByOrderId(orderIdQuery, shouldSearchOrderId)
+  ]);
 
   try {
     installation = await getCafe24Installation();
@@ -143,7 +197,7 @@ async function getAdminData(fileIdQuery: string, shouldSearchFileId: boolean) {
     dataError = dataError ?? (error instanceof Error ? error.message : "Failed to load recent files.");
   }
 
-  return { cafe24, supabase, storage, installation, files, dataError, fileLookup };
+  return { cafe24, supabase, storage, installation, files, dataError, fileLookup, orderLookup };
 }
 
 function FileLookupField({
@@ -255,6 +309,26 @@ function OrderLinkPanel({
   );
 }
 
+function OrderFileResultCard({ file }: { file: UploadedFileRecord }) {
+  return (
+    <div className="notice" style={{ marginTop: 14 }}>
+      <div className="grid grid-3">
+        <FileLookupField label="original_filename" value={file.original_filename} />
+        <FileLookupField label="file_id" value={file.id} />
+        <FileLookupField label="product_no" value={file.product_no} />
+        <FileLookupField label="file_size" value={file.file_size} />
+        <FileLookupField label="mime_type" value={file.mime_type} />
+        <FileLookupField label="status" value={file.status} />
+        <FileLookupField label="storage_bucket" value={file.storage_bucket} />
+        <FileLookupField label="storage_path" value={file.storage_path} />
+        <FileLookupField label="created_at" value={file.created_at} />
+        <FileLookupField label="updated_at" value={file.updated_at} />
+      </div>
+      <DownloadPanel file={file} />
+    </div>
+  );
+}
+
 function AdminConfigMissingPage() {
   const status = getAdminAuthConfigStatus();
 
@@ -322,8 +396,14 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
   }
 
   const fileIdQuery = readParam(searchParams, "file_id");
+  const orderIdQuery = readParam(searchParams, "order_id");
   const orderLinkMessage = getOrderLinkMessage(readParam(searchParams, "order_link"));
-  const data = await getAdminData(fileIdQuery, hasFileIdParam(searchParams));
+  const data = await getAdminData(
+    fileIdQuery,
+    hasFileIdParam(searchParams),
+    orderIdQuery,
+    hasOrderIdParam(searchParams)
+  );
   const isSupabaseConfigured = data.supabase.hasUrl && data.supabase.hasAnonKey && data.supabase.hasServiceRoleKey;
 
   return (
@@ -378,6 +458,40 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
           <div className="card"><span>refresh token expires</span><strong>{data.installation?.refresh_token_expires_at ?? "-"}</strong></div>
           <div className="card"><span>scopes</span><strong>{data.installation?.scopes ?? "-"}</strong></div>
         </div>
+      </section>
+
+      <section className="panel panel-pad">
+        <h2>주문번호로 업로드 파일 찾기</h2>
+        <p className="lead">
+          Cafe24 주문번호를 입력하면 해당 주문번호에 연결된 업로드 파일 목록을 확인할 수 있습니다.
+        </p>
+        <form className="form" method="get" style={{ marginTop: 16 }}>
+          <div className="field">
+            <label htmlFor="order_id_lookup">Cafe24 주문번호</label>
+            <input
+              id="order_id_lookup"
+              name="order_id"
+              placeholder="Cafe24 주문번호를 입력하세요. 예: 20260630-0000029"
+              defaultValue={data.orderLookup.query}
+            />
+          </div>
+          <button className="button" type="submit">주문번호로 파일 찾기</button>
+        </form>
+
+        {data.orderLookup.message ? (
+          <div className="notice" style={{ marginTop: 16 }}>{data.orderLookup.message}</div>
+        ) : null}
+
+        {data.orderLookup.files.length ? (
+          <div style={{ marginTop: 16 }}>
+            <p className="lead">
+              주문번호 {data.orderLookup.query}에 연결된 파일 {data.orderLookup.files.length}개
+            </p>
+            {data.orderLookup.files.map((file) => (
+              <OrderFileResultCard key={file.id} file={file} />
+            ))}
+          </div>
+        ) : null}
       </section>
 
       <section className="panel panel-pad">
