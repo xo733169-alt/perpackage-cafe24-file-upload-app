@@ -7,14 +7,16 @@ import { FILE_STATUS_OPTIONS, getFileStatusLabel } from "@/lib/files/file-status
 type AdminFileStatusFormProps = {
   fileId: string;
   currentStatus: string;
+  variant?: "default" | "compact";
 };
 
-export function AdminFileStatusForm({ fileId, currentStatus }: AdminFileStatusFormProps) {
+export function AdminFileStatusForm({ fileId, currentStatus, variant = "default" }: AdminFileStatusFormProps) {
   const router = useRouter();
   const [status, setStatus] = useState(currentStatus || "uploaded_pending");
   const [memo, setMemo] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const isCompact = variant === "compact";
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -47,13 +49,13 @@ export function AdminFileStatusForm({ fileId, currentStatus }: AdminFileStatusFo
     }
   }
 
-  return (
-    <div className="notice" style={{ marginTop: 16 }}>
-      <h3 style={{ marginTop: 0 }}>파일 상태 변경</h3>
-      <p style={{ marginTop: 0 }}>
+  const form = (
+    <>
+      {!isCompact ? <h3 style={{ marginTop: 0 }}>파일 상태 변경</h3> : null}
+      <p style={{ marginTop: 0, marginBottom: isCompact ? 8 : undefined }}>
         현재 상태: <strong>{getFileStatusLabel(currentStatus)}</strong>
       </p>
-      <form className="form" onSubmit={handleSubmit}>
+      <form className={isCompact ? "form form-compact" : "form"} onSubmit={handleSubmit}>
         <div className="field">
           <label htmlFor={`file_status_${fileId}`}>상태 선택</label>
           <select
@@ -85,6 +87,16 @@ export function AdminFileStatusForm({ fileId, currentStatus }: AdminFileStatusFo
         </button>
       </form>
       {message ? <p style={{ marginBottom: 0 }}>{message}</p> : null}
+    </>
+  );
+
+  if (isCompact) {
+    return <div className="status-form-compact">{form}</div>;
+  }
+
+  return (
+    <div className="notice" style={{ marginTop: 16 }}>
+      {form}
     </div>
   );
 }

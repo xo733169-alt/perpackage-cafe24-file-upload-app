@@ -1,5 +1,6 @@
 import { linkFileOrderIdAction, loginAdminAction, logoutAdminAction } from "@/app/admin/actions";
 import { AdminFileStatusForm } from "@/components/AdminFileStatusForm";
+import { CopyFileIdButton } from "@/components/CopyFileIdButton";
 import { getAdminAuthConfigStatus, isAdminAuthenticated } from "@/lib/admin/auth";
 import { getCafe24ConfigStatus } from "@/lib/cafe24/config";
 import { getCafe24Installation } from "@/lib/cafe24/token-store";
@@ -12,18 +13,6 @@ import { getNaverStorageStatus } from "@/lib/storage/naver-object-storage";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
-
-type RecentUploadedFile = Pick<
-  UploadedFileRecord,
-  | "id"
-  | "original_filename"
-  | "mall_id"
-  | "product_no"
-  | "file_size"
-  | "mime_type"
-  | "status"
-  | "created_at"
->;
 
 type FileLookupState = {
   query: string;
@@ -180,7 +169,7 @@ async function getAdminData(
   const supabase = getSupabaseConfigStatus();
   const storage = getNaverStorageStatus();
   let installation = null;
-  let files: RecentUploadedFile[] = [];
+  let files: UploadedFileRecord[] = [];
   let dataError = null;
   const [fileLookup, orderLookup] = await Promise.all([
     lookupFileById(fileIdQuery, shouldSearchFileId),
@@ -556,32 +545,54 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
       </section>
 
       <section className="panel panel-pad">
-        <h2>Recent uploaded files</h2>
+        <h2>최근 업로드 파일</h2>
+        <p className="lead">
+          최근 고객이 업로드한 파일 목록입니다. 파일을 다운로드하거나 상태를 변경할 수 있습니다.
+        </p>
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
                 <th>File name</th>
+                <th>file_id</th>
+                <th>Cafe24 주문번호</th>
                 <th>mall/product</th>
                 <th>Size</th>
                 <th>MIME</th>
                 <th>Status</th>
                 <th>Uploaded at</th>
+                <th>Download</th>
+                <th>상태 변경</th>
               </tr>
             </thead>
             <tbody>
               {data.files.length ? data.files.map((file) => (
                 <tr key={file.id}>
                   <td>{file.original_filename}</td>
+                  <td><CopyFileIdButton fileId={file.id} /></td>
+                  <td>{file.order_id ?? "미연결"}</td>
                   <td>{file.mall_id ?? "-"} / {file.product_no ?? "-"}</td>
                   <td>{file.file_size.toLocaleString()} bytes</td>
                   <td>{file.mime_type}</td>
                   <td><span className="status">{getFileStatusLabel(file.status)}</span></td>
                   <td>{file.created_at}</td>
+                  <td>
+                    <a
+                      className="button secondary button-small"
+                      href={`/api/files/download?file_id=${encodeURIComponent(file.id)}`}
+                      rel="noreferrer"
+                      target="_blank"
+                    >
+                      다운로드
+                    </a>
+                  </td>
+                  <td>
+                    <AdminFileStatusForm fileId={file.id} currentStatus={file.status} variant="compact" />
+                  </td>
                 </tr>
               )) : (
                 <tr>
-                  <td colSpan={6}>No recent uploaded files.</td>
+                  <td colSpan={10}>최근 업로드 파일이 없습니다.</td>
                 </tr>
               )}
             </tbody>

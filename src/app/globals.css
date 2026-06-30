@@ -27,7 +27,8 @@ a {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -199,13 +200,19 @@ h2 {
 }
 
 .field input,
-.field select {
+.field select,
+.field textarea {
   min-height: 44px;
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 10px 12px;
   background: #fff;
+}
+
+.field textarea {
+  min-height: 72px;
+  resize: vertical;
 }
 
 .button {
@@ -223,6 +230,13 @@ h2 {
   cursor: pointer;
 }
 
+.button-small {
+  min-height: 32px;
+  padding: 6px 10px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .button.secondary {
   border: 1px solid var(--line);
   background: #fff;
@@ -237,7 +251,7 @@ h2 {
 
 table {
   width: 100%;
-  min-width: 760px;
+  min-width: 1180px;
   border-collapse: collapse;
   background: #fff;
 }
@@ -277,6 +291,49 @@ th {
   color: #6a4b12;
   font-size: 13px;
   line-height: 1.65;
+}
+
+.copy-file-id {
+  display: grid;
+  gap: 6px;
+  min-width: 120px;
+}
+
+.copy-file-id code {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+}
+
+.copy-message {
+  color: var(--brand);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.form-compact {
+  gap: 8px;
+  min-width: 190px;
+}
+
+.form-compact .field {
+  gap: 4px;
+}
+
+.form-compact .field input,
+.form-compact .field select,
+.form-compact .field textarea {
+  min-height: 34px;
+  padding: 7px 9px;
+  font-size: 12px;
+}
+
+.form-compact .field textarea {
+  min-height: 54px;
+}
+
+.status-form-compact {
+  min-width: 210px;
+  color: var(--ink);
 }
 
 .result {
