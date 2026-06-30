@@ -60,7 +60,7 @@ function normalizeLimit(value?: number) {
     return 50;
   }
 
-  return Math.min(Math.max(Math.trunc(value), 1), 100);
+  return Math.min(Math.max(Math.trunc(value), 1), 1000);
 }
 
 function isUuidLike(value: string) {
@@ -135,7 +135,7 @@ export async function listAdminDownloadLogs(filters: AdminDownloadLogFilters = {
   const resultFilter = normalizeResultFilter(filters.result);
   const limit = normalizeLimit(filters.limit);
   const shouldFilterFileIdInMemory = Boolean(fileIdFilter && !isUuidLike(fileIdFilter));
-  const queryLimit = shouldFilterFileIdInMemory ? 500 : limit;
+  const queryLimit = shouldFilterFileIdInMemory ? Math.max(500, limit) : limit;
   const supabase = getSupabaseAdmin();
   let orderFileIds: string[] | null = null;
 

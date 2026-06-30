@@ -109,6 +109,33 @@ function getDownloadResultFilter(value: string): AdminDownloadLogResultFilter {
   return value === "success" || value === "failed" ? value : "all";
 }
 
+function buildDownloadLogExportHref({
+  fileId,
+  orderId,
+  result
+}: {
+  fileId: string;
+  orderId: string;
+  result: AdminDownloadLogResultFilter;
+}) {
+  const params = new URLSearchParams();
+
+  if (fileId) {
+    params.set("download_file_id", fileId);
+  }
+
+  if (orderId) {
+    params.set("download_order_id", orderId);
+  }
+
+  if (result !== "all") {
+    params.set("download_result", result);
+  }
+
+  const query = params.toString();
+  return `/api/admin/download-logs/export${query ? `?${query}` : ""}`;
+}
+
 function shortenUserAgent(userAgent: string | null) {
   if (!userAgent) {
     return "-";
@@ -574,6 +601,11 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
   const downloadFileIdFilter = readParam(searchParams, "download_file_id").trim();
   const downloadOrderIdFilter = readParam(searchParams, "download_order_id").trim();
   const downloadResultFilter = getDownloadResultFilter(readParam(searchParams, "download_result"));
+  const downloadLogsExportHref = buildDownloadLogExportHref({
+    fileId: downloadFileIdFilter,
+    orderId: downloadOrderIdFilter,
+    result: downloadResultFilter
+  });
   const orderLinkMessage = getOrderLinkMessage(readParam(searchParams, "order_link"));
   const data = await getAdminData(
     fileIdQuery,
@@ -866,6 +898,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button className="button" type="submit">필터 적용</button>
             <a className="button secondary" href="/admin">초기화</a>
+            <a className="button secondary" href={downloadLogsExportHref}>CSV 다운로드</a>
           </div>
         </form>
         <AdminDownloadLogTable logs={data.adminDownloadLogs} />
