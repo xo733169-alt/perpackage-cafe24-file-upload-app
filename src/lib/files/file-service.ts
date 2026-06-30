@@ -7,6 +7,13 @@ import type { FileUploadInput, UploadedFileRecord } from "./types";
 const DEFAULT_UPLOAD_MAX_FILE_SIZE_MB = 10;
 const STORAGE_PROVIDER = "naver-object-storage";
 
+export type RecentFileOrderLinkFilter = "all" | "linked" | "unlinked";
+
+export type ListRecentFilesFilters = {
+  status?: string;
+  orderLink?: RecentFileOrderLinkFilter;
+};
+
 function sanitizeFilename(filename: string) {
   const normalized = filename.normalize("NFKC").replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, " ").trim();
   return normalized || "upload-file";
@@ -97,17 +104,33 @@ export async function uploadFile(input: FileUploadInput): Promise<UploadedFileRe
   return data as UploadedFileRecord;
 }
 
-export async function listRecentFiles(limit = 20): Promise<UploadedFileRecord[]> {
+export async function listRecentFiles(limit = 20, filters: ListRecentFilesFilters = {}): Promise<UploadedFileRecord[]> {
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
+  let query = supabase
     .from("files")
-    .select("*")
+    .select("*");
+
+  if (filters.status && isKnownFileStatus(filters.status)) {
+    query = query.eq("status", filters.status);
+  }
+
+  if (filters.orderLink === "linked") {
+    query = query.not("order_id", "is", null);
+  }
+
+  if (filters.orderLink === "unlinked") {
+    query = query.is("order_id", null);
+  }
+
+  const { data, error } = await query
     .order("created_at", { ascending: false })
     .limit(limit);
 
   if (error) {
     console.error("list_recent_files_failed", {
       limit,
+      statusFilter: filters.status ?? null,
+      orderLinkFilter: filters.orderLink ?? null,
       code: error.code ?? null,
       message: error.message ?? null
     });
@@ -116,6 +139,8 @@ export async function listRecentFiles(limit = 20): Promise<UploadedFileRecord[]>
 
   console.info("list_recent_files_result", {
     limit,
+    statusFilter: filters.status ?? null,
+    orderLinkFilter: filters.orderLink ?? null,
     count: data?.length ?? 0
   });
 

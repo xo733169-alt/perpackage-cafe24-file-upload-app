@@ -9,8 +9,13 @@ import {
   listFileStatusChangeLogs,
   type FileStatusChangeLogRecord
 } from "@/lib/files/file-review-log-service";
-import { getFileStatusLabel } from "@/lib/files/file-status";
-import { getFileById, listFilesByOrderId, listRecentFiles } from "@/lib/files/file-service";
+import { FILE_STATUS_OPTIONS, getFileStatusLabel, isKnownFileStatus } from "@/lib/files/file-status";
+import {
+  getFileById,
+  listFilesByOrderId,
+  listRecentFiles,
+  type RecentFileOrderLinkFilter
+} from "@/lib/files/file-service";
 import type { UploadedFileRecord } from "@/lib/files/types";
 import { getSupabaseConfigStatus } from "@/lib/supabase/admin";
 import { getNaverStorageStatus } from "@/lib/storage/naver-object-storage";
@@ -41,10 +46,15 @@ type AdminPageProps = {
     file_id?: string | string[];
     order_link?: string | string[];
     order_id?: string | string[];
+    recent_status?: string | string[];
+    recent_order_link?: string | string[];
   };
 };
 
-function readParam(searchParams: AdminPageProps["searchParams"], key: "auth" | "file_id" | "order_link" | "order_id") {
+function readParam(
+  searchParams: AdminPageProps["searchParams"],
+  key: "auth" | "file_id" | "order_link" | "order_id" | "recent_status" | "recent_order_link"
+) {
   const value = searchParams?.[key];
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
 }
@@ -67,6 +77,14 @@ function formatEmpty(value: string | number | null | undefined, emptyText = "-")
 
 function formatBytes(value: number) {
   return `${value.toLocaleString()} bytes`;
+}
+
+function getRecentStatusFilter(value: string) {
+  return isKnownFileStatus(value) ? value : "all";
+}
+
+function getRecentOrderLinkFilter(value: string): RecentFileOrderLinkFilter {
+  return value === "linked" || value === "unlinked" ? value : "all";
 }
 
 function shortenUserAgent(userAgent: string | null) {
@@ -194,7 +212,9 @@ async function getAdminData(
   fileIdQuery: string,
   shouldSearchFileId: boolean,
   orderIdQuery: string,
-  shouldSearchOrderId: boolean
+  shouldSearchOrderId: boolean,
+  recentStatusFilter: string,
+  recentOrderLinkFilter: RecentFileOrderLinkFilter
 ) {
   const cafe24 = getCafe24ConfigStatus();
   const supabase = getSupabaseConfigStatus();
@@ -214,7 +234,10 @@ async function getAdminData(
   }
 
   try {
-    files = await listRecentFiles(20);
+    files = await listRecentFiles(20, {
+      status: recentStatusFilter,
+      orderLink: recentOrderLinkFilter
+    });
   } catch (error) {
     dataError = dataError ?? (error instanceof Error ? error.message : "Failed to load recent files.");
   }
@@ -470,12 +493,16 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
 
   const fileIdQuery = readParam(searchParams, "file_id");
   const orderIdQuery = readParam(searchParams, "order_id");
+  const recentStatusFilter = getRecentStatusFilter(readParam(searchParams, "recent_status"));
+  const recentOrderLinkFilter = getRecentOrderLinkFilter(readParam(searchParams, "recent_order_link"));
   const orderLinkMessage = getOrderLinkMessage(readParam(searchParams, "order_link"));
   const data = await getAdminData(
     fileIdQuery,
     hasFileIdParam(searchParams),
     orderIdQuery,
-    hasOrderIdParam(searchParams)
+    hasOrderIdParam(searchParams),
+    recentStatusFilter,
+    recentOrderLinkFilter
   );
   const isSupabaseConfigured = data.supabase.hasUrl && data.supabase.hasAnonKey && data.supabase.hasServiceRoleKey;
 
@@ -628,6 +655,38 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
         <p className="lead">
           최근 고객이 업로드한 파일 목록입니다. 파일을 다운로드하거나 상태를 변경할 수 있습니다.
         </p>
+        <form className="form" method="get" style={{ marginTop: 16, marginBottom: 16 }}>
+          {fileIdQuery ? <input name="file_id" type="hidden" value={fileIdQuery} /> : null}
+          {orderIdQuery ? <input name="order_id" type="hidden" value={orderIdQuery} /> : null}
+          <div className="grid grid-3">
+            <div className="field">
+              <label htmlFor="recent_status">상태</label>
+              <select id="recent_status" name="recent_status" defaultValue={recentStatusFilter}>
+                <option value="all">전체</option>
+                {FILE_STATUS_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor="recent_order_link">주문번호</label>
+              <select id="recent_order_link" name="recent_order_link" defaultValue={recentOrderLinkFilter}>
+                <option value="all">전체</option>
+                <option value="linked">주문번호 연결됨</option>
+                <option value="unlinked">주문번호 미연결</option>
+              </select>
+            </div>
+            <div className="field">
+              <span>&nbsp;</span>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button className="button" type="submit">필터 적용</button>
+                <a className="button secondary" href="/admin">초기화</a>
+              </div>
+            </div>
+          </div>
+        </form>
         <div className="table-wrap">
           <table>
             <thead>
