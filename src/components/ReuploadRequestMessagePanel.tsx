@@ -9,6 +9,33 @@ type ReuploadRequestMessagePanelProps = {
   currentStatus: string;
 };
 
+const REUPLOAD_REASON_PRESETS = [
+  {
+    label: "폰트 아웃라인 필요",
+    value: "폰트 아웃라인 처리가 필요합니다."
+  },
+  {
+    label: "칼선 누락",
+    value: "칼선 파일이 누락되어 확인이 필요합니다."
+  },
+  {
+    label: "이미지 해상도 확인 필요",
+    value: "이미지 해상도 확인이 필요합니다."
+  },
+  {
+    label: "파일 열림 오류",
+    value: "첨부 파일이 정상적으로 열리지 않아 재업로드가 필요합니다."
+  },
+  {
+    label: "인쇄용 PDF/AI 파일 필요",
+    value: "인쇄용 PDF 또는 AI 파일로 다시 전달이 필요합니다."
+  },
+  {
+    label: "전개도 위치 확인 필요",
+    value: "박스 전개도와 디자인 위치 확인이 필요합니다."
+  }
+];
+
 function buildReuploadRequestMessage(input: {
   fileId: string;
   originalFilename: string;
@@ -64,6 +91,11 @@ export function ReuploadRequestMessagePanel({
     }
   }
 
+  function handlePresetClick(presetReason: string) {
+    setReason(presetReason);
+    setCopyMessage(null);
+  }
+
   return (
     <div className="notice" style={{ marginTop: 16 }}>
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
@@ -75,6 +107,22 @@ export function ReuploadRequestMessagePanel({
       </p>
       <div className="field">
         <label htmlFor={`reupload_reason_${fileId}`}>재업로드 요청 사유</label>
+        <div style={{ marginBottom: 8 }}>
+          <p style={{ margin: "0 0 6px" }}>자주 쓰는 사유</p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {REUPLOAD_REASON_PRESETS.map((preset) => (
+              <button
+                className="button secondary"
+                key={preset.label}
+                onClick={() => handlePresetClick(preset.value)}
+                style={{ padding: "6px 10px" }}
+                type="button"
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+        </div>
         <textarea
           id={`reupload_reason_${fileId}`}
           onChange={(event) => {
