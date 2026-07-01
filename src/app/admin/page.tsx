@@ -11,6 +11,11 @@ import { getCafe24ConfigStatus } from "@/lib/cafe24/config";
 import { fetchCafe24OrderLookup, type Cafe24OrderLookupSummary } from "@/lib/cafe24/order-lookup";
 import { getCafe24Installation } from "@/lib/cafe24/token-store";
 import {
+  listRecentCafe24WebhookEvents,
+  summarizeCafe24WebhookPayload,
+  type Cafe24WebhookEventRecord
+} from "@/lib/cafe24/webhook-events";
+import {
   listAdminDownloadLogs,
   listFileDownloadLogs,
   type AdminDownloadLogRecord,
@@ -396,6 +401,7 @@ async function getAdminData(
   let installation = null;
   let files: UploadedFileRecord[] = [];
   let adminDownloadLogs: AdminDownloadLogRecord[] = [];
+  let cafe24WebhookEvents: Cafe24WebhookEventRecord[] = [];
   let dataError = null;
   const [fileLookup, orderLookup] = await Promise.all([
     lookupFileById(fileIdQuery, shouldSearchFileId),
@@ -431,7 +437,25 @@ async function getAdminData(
     dataError = dataError ?? (error instanceof Error ? error.message : "Failed to load download logs.");
   }
 
-  return { cafe24, supabase, storage, installation, files, adminDownloadLogs, dataError, fileLookup, orderLookup, cafe24OrderLookup };
+  try {
+    cafe24WebhookEvents = await listRecentCafe24WebhookEvents(10);
+  } catch (error) {
+    dataError = dataError ?? (error instanceof Error ? error.message : "Failed to load Cafe24 webhook events.");
+  }
+
+  return {
+    cafe24,
+    supabase,
+    storage,
+    installation,
+    files,
+    adminDownloadLogs,
+    cafe24WebhookEvents,
+    dataError,
+    fileLookup,
+    orderLookup,
+    cafe24OrderLookup
+  };
 }
 
 function FileLookupField({
@@ -516,6 +540,54 @@ function DownloadLogPanel({ logs }: { logs: FileDownloadLogRecord[] }) {
         </table>
       </div>
     </div>
+  );
+}
+
+function Cafe24WebhookEventsPanel({ events }: { events: Cafe24WebhookEventRecord[] }) {
+  return (
+    <section className="panel panel-pad">
+      <h2>Cafe24 Webhook 수신 로그</h2>
+      <p className="lead">
+        Cafe24 Webhook 요청이 실제로 들어오는지 확인하기 위한 최근 수신 로그입니다. payload 전체가 아니라 안전한 요약만 표시합니다.
+      </p>
+      <div className="table-wrap" style={{ marginTop: 16 }}>
+        <table>
+          <thead>
+            <tr>
+              <th>수신일시</th>
+              <th>event_type</th>
+              <th>order_id</th>
+              <th>processed_status</th>
+              <th>error_message</th>
+              <th>payload 요약</th>
+            </tr>
+          </thead>
+          <tbody>
+            {events.length ? events.map((event) => {
+              const summary = summarizeCafe24WebhookPayload(event.payload);
+              return (
+                <tr key={event.id}>
+                  <td>{event.received_at}</td>
+                  <td><span className="status">{event.event_type || summary.eventType}</span></td>
+                  <td>{event.order_id ?? summary.orderId ?? "-"}</td>
+                  <td>{event.processed_status}</td>
+                  <td>{event.error_message ?? "-"}</td>
+                  <td>
+                    <div>top-level keys: {summary.topLevelKeys.join(", ") || "-"}</div>
+                    <div>mall_id: {event.mall_id ?? summary.mallId ?? "-"}</div>
+                    <div>order_id 후보: {summary.orderId ?? "-"}</div>
+                  </td>
+                </tr>
+              );
+            }) : (
+              <tr>
+                <td colSpan={6}>아직 수신된 Cafe24 Webhook 로그가 없습니다.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
@@ -988,6 +1060,8 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
       </section>
 
       <Cafe24OrderApiLookupPanel lookup={data.cafe24OrderLookup} linkMessage={cafe24AutoLinkMessage} />
+
+      <Cafe24WebhookEventsPanel events={data.cafe24WebhookEvents} />
 
       <section className="panel panel-pad">
         <h2>주문번호로 업로드 파일 찾기</h2>
