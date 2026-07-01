@@ -8,7 +8,7 @@ import {
   setAdminSessionCookie,
   verifyAdminPassword
 } from "@/lib/admin/auth";
-import { updateFileOrderId } from "@/lib/files/file-service";
+import { getFileById, updateFileOrderId } from "@/lib/files/file-service";
 
 export async function loginAdminAction(formData: FormData) {
   const status = getAdminAuthConfigStatus();
@@ -57,4 +57,54 @@ export async function linkFileOrderIdAction(formData: FormData) {
   }
 
   redirect(`/admin?file_id=${encodeURIComponent(fileId)}&order_link=success`);
+}
+
+export async function linkCafe24LookupFileOrderIdAction(formData: FormData) {
+  const fileId = String(formData.get("file_id") ?? "").trim();
+  const orderId = String(formData.get("order_id") ?? "").trim();
+  const redirectToCafe24Lookup = (status: string) => {
+    const params = new URLSearchParams();
+    if (orderId) {
+      params.set("cafe24_order_id", orderId);
+    }
+    params.set("cafe24_link", status);
+    redirect(`/admin?${params.toString()}`);
+  };
+
+  if (!isAdminAuthenticated()) {
+    redirect("/admin?auth=failed");
+  }
+
+  if (!orderId) {
+    redirectToCafe24Lookup("empty_order_id");
+  }
+
+  if (!fileId) {
+    redirectToCafe24Lookup("missing_file_id");
+  }
+
+  let linkStatus = "success";
+
+  try {
+    const file = await getFileById(fileId);
+    if (!file) {
+      linkStatus = "file_not_found";
+    } else {
+      const currentOrderId = file.order_id?.trim() ?? "";
+      if (currentOrderId === orderId) {
+        linkStatus = "already_linked";
+      } else if (currentOrderId && currentOrderId !== orderId) {
+        linkStatus = "different_order";
+      } else {
+        await updateFileOrderId({ fileId, orderId });
+      }
+    }
+  } catch (error) {
+    console.error("cafe24_lookup_file_order_link_failed", {
+      message: error instanceof Error ? error.message : "Unknown error"
+    });
+    linkStatus = "failed";
+  }
+
+  redirectToCafe24Lookup(linkStatus);
 }
