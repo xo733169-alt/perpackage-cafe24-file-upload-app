@@ -19,6 +19,16 @@ export type Cafe24WebhookEventRecord = {
   created_at: string;
 };
 
+export type Cafe24WebhookProcessedStatus =
+  | "received"
+  | "auto_linked"
+  | "already_linked"
+  | "no_order_id"
+  | "no_file_id"
+  | "file_not_found"
+  | "conflict_order_id"
+  | "failed";
+
 export type Cafe24WebhookPayloadSummary = {
   topLevelKeys: string[];
   mallId: string | null;
@@ -54,6 +64,22 @@ function getNestedRecordValue(payload: unknown, path: string[]) {
   }
 
   return asString(current);
+}
+
+function getNestedUnknownValue(payload: unknown, path: string[]) {
+  let current: unknown = payload;
+  for (const segment of path) {
+    if (Array.isArray(current)) {
+      const index = Number(segment);
+      current = Number.isInteger(index) ? current[index] : undefined;
+      continue;
+    }
+
+    if (!isRecord(current)) return null;
+    current = current[segment];
+  }
+
+  return current ?? null;
 }
 
 export function sanitizeJsonValue(value: unknown, key = "", depth = 0): JsonValue {
@@ -134,6 +160,14 @@ export function extractCafe24WebhookEventType(payload: unknown, headersSummary: 
 
   if (fromPayload) return fromPayload;
 
+  const eventNo =
+    asString(getNestedUnknownValue(payload, ["event_no"])) ||
+    asString(getNestedUnknownValue(payload, ["resource", "event_no"])) ||
+    asString(getNestedUnknownValue(payload, ["data", "event_no"]));
+
+  if (eventNo === "90023") return "order.received";
+  if (eventNo === "90025") return "order.updated";
+
   const headerCandidates = [
     "x-cafe24-event-type",
     "x-cafe24-event",
@@ -201,6 +235,42 @@ export async function createCafe24WebhookEvent(input: {
       hint: error.hint ?? null
     });
     throw new Error("Failed to store Cafe24 webhook event.");
+  }
+
+  return data as Cafe24WebhookEventRecord;
+}
+
+export async function updateCafe24WebhookEventProcessing(input: {
+  id: string;
+  processedStatus: Cafe24WebhookProcessedStatus;
+  errorMessage?: string | null;
+  orderId?: string | null;
+}): Promise<Cafe24WebhookEventRecord> {
+  const updatePayload: Record<string, unknown> = {
+    processed_status: input.processedStatus,
+    error_message: input.errorMessage ?? null
+  };
+
+  if (input.orderId !== undefined) {
+    updatePayload.order_id = input.orderId;
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("cafe24_webhook_events")
+    .update(updatePayload)
+    .eq("id", input.id)
+    .select("*")
+    .single();
+
+  if (error) {
+    console.error("cafe24_webhook_event_update_failed", {
+      code: error.code ?? null,
+      message: error.message ?? null,
+      details: error.details ?? null,
+      hint: error.hint ?? null
+    });
+    throw new Error("Failed to update Cafe24 webhook event processing status.");
   }
 
   return data as Cafe24WebhookEventRecord;
