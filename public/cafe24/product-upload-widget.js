@@ -84,23 +84,32 @@
     var style = document.createElement("style");
     style.id = STYLE_ID;
     style.textContent = [
-      "#app-perpackage-product-upload{margin:18px 0;padding:16px;border:1px solid #d9e2f2;border-radius:8px;background:#f7faff;color:#1f2a44;font-family:inherit;box-sizing:border-box}",
+      "#app-perpackage-product-upload{margin:18px 0;padding:18px;border:1px solid #d9e2f2;border-radius:8px;background:#fff;color:#1f2a44;font-family:inherit;box-sizing:border-box;box-shadow:0 6px 18px rgba(31,42,68,.06)}",
       "#app-perpackage-product-upload *{box-sizing:border-box}",
-      "#app-perpackage-product-upload .ppu-title{margin:0 0 6px;font-size:16px;font-weight:700;color:#15213b}",
-      "#app-perpackage-product-upload .ppu-desc{margin:0 0 12px;font-size:13px;line-height:1.55;color:#4b5875}",
-      "#app-perpackage-product-upload .ppu-form{display:grid;gap:10px}",
-      "#app-perpackage-product-upload .ppu-file{width:100%;padding:10px;border:1px solid #cfd8ea;border-radius:6px;background:#fff;font-size:13px}",
-      "#app-perpackage-product-upload .ppu-button{width:100%;max-width:180px;padding:10px 14px;border:0;border-radius:6px;background:#2A408C;color:#fff;font-size:14px;font-weight:700;cursor:pointer}",
+      "#app-perpackage-product-upload .ppu-title{margin:0 0 8px;font-size:17px;font-weight:700;color:#15213b;line-height:1.35}",
+      "#app-perpackage-product-upload .ppu-desc{margin:0 0 6px;font-size:13px;line-height:1.6;color:#4b5875}",
+      "#app-perpackage-product-upload .ppu-guide{margin:12px 0;padding:12px;border:1px solid #dbe5f5;border-radius:8px;background:#f7faff}",
+      "#app-perpackage-product-upload .ppu-guide-title{margin:0 0 8px;font-size:13px;font-weight:700;color:#1f2a44}",
+      "#app-perpackage-product-upload .ppu-checklist{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 12px;margin:0;padding:0;list-style:none}",
+      "#app-perpackage-product-upload .ppu-checklist li{position:relative;padding-left:18px;font-size:12px;line-height:1.45;color:#4b5875}",
+      "#app-perpackage-product-upload .ppu-checklist li:before{content:'✓';position:absolute;left:0;top:0;color:#2A408C;font-weight:700}",
+      "#app-perpackage-product-upload .ppu-form{display:grid;gap:10px;margin-top:12px}",
+      "#app-perpackage-product-upload .ppu-file-help{margin:0;font-size:12px;line-height:1.55;color:#5b6680}",
+      "#app-perpackage-product-upload .ppu-file-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center}",
+      "#app-perpackage-product-upload .ppu-file{width:100%;min-width:0;padding:10px;border:1px solid #cfd8ea;border-radius:6px;background:#fff;font-size:13px;color:#1f2a44}",
+      "#app-perpackage-product-upload .ppu-button{width:100%;min-width:128px;max-width:180px;padding:10px 14px;border:0;border-radius:6px;background:#2A408C;color:#fff;font-size:14px;font-weight:700;cursor:pointer;white-space:nowrap}",
       "#app-perpackage-product-upload .ppu-button:disabled{background:#8b97ba;cursor:not-allowed}",
-      "#app-perpackage-product-upload .ppu-status{margin:2px 0 0;font-size:13px;line-height:1.5;color:#4b5875}",
+      "#app-perpackage-product-upload .ppu-status{margin:2px 0 0;font-size:13px;line-height:1.55;color:#4b5875}",
       "#app-perpackage-product-upload .ppu-result{margin:10px 0 0;padding:10px;border-radius:6px;background:#fff;border:1px solid #d9e2f2;font-size:13px;line-height:1.6}",
+      "#app-perpackage-product-upload .ppu-result-title{display:block;margin-bottom:4px;color:#15213b;font-weight:700}",
+      "#app-perpackage-product-upload .ppu-tracking{display:block;margin-top:4px;font-size:12px;color:#6b7280;word-break:break-all}",
       "#app-perpackage-product-upload .ppu-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}",
       "#app-perpackage-product-upload .ppu-action{padding:8px 10px;border:1px solid #b8c4dd;border-radius:6px;background:#fff;color:#1f2a44;font-size:12px;font-weight:700;cursor:pointer}",
       "#app-perpackage-product-upload .ppu-action:hover{border-color:#2A408C;color:#2A408C}",
       "#app-perpackage-product-upload .ppu-error{color:#b42318}",
       "#app-perpackage-product-upload .ppu-success{color:#155724}",
       "#app-perpackage-product-upload .ppu-warning{color:#9a6700}",
-      "@media (max-width:480px){#app-perpackage-product-upload{padding:14px}#app-perpackage-product-upload .ppu-button{max-width:none}}"
+      "@media (max-width:560px){#app-perpackage-product-upload{padding:14px}#app-perpackage-product-upload .ppu-checklist{grid-template-columns:1fr}#app-perpackage-product-upload .ppu-file-row{grid-template-columns:1fr}#app-perpackage-product-upload .ppu-button{max-width:none}}"
     ].join("\n");
     document.head.appendChild(style);
   }
@@ -557,6 +566,196 @@
         })
         .catch(function (error) {
           showMessage(status, result, error.message || "네트워크 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.", true);
+        })
+        .finally(function () {
+          button.disabled = false;
+        });
+    });
+  }
+
+  function renderUploadResult(result, uploaded, fileId, cafe24InputResult) {
+    var actions = [
+      '<div class="ppu-actions">'
+    ];
+
+    if (cafe24InputResult.status !== "success") {
+      actions.push('<button class="ppu-action" type="button" data-ppu-action="retry-file-id">업로드 파일 ID 다시 입력하기</button>');
+    }
+
+    actions.push('<button class="ppu-action" type="button" data-ppu-action="reset-upload">다시 업로드하기</button>');
+    actions.push("</div>");
+
+    result.hidden = false;
+    result.innerHTML = [
+      '<span class="ppu-result-title">파일 업로드가 완료되었습니다.</span>',
+      "주문 시 업로드 파일 ID가 함께 전달됩니다.",
+      '<span class="ppu-tracking">업로드 파일 ID: ' + escapeHtml(fileId || "-") + "</span>",
+      '<span class="ppu-tracking">파일명: ' + escapeHtml(uploaded.original_filename || "-") + "</span>",
+      '<span class="ppu-tracking">상태: ' + escapeHtml(uploaded.status || "-") + " / Cafe24 입력 옵션 반영: " + escapeHtml(cafe24InputResult.status) + "</span>",
+      '<span class="ppu-tracking">input source: ' + escapeHtml(cafe24InputResult.source || "-") + "</span>",
+      actions.join("")
+    ].join("");
+  }
+
+  function renderWidget() {
+    injectStyles();
+
+    var wrapper = document.createElement("section");
+    wrapper.id = WIDGET_ID;
+    wrapper.setAttribute("aria-label", "Perpackage print file upload");
+    wrapper.innerHTML = [
+      '<h3 class="ppu-title">인쇄용 파일 업로드</h3>',
+      '<p class="ppu-desc">인쇄용 파일을 업로드해 주세요.</p>',
+      '<p class="ppu-desc">AI, PDF, EPS, ZIP 파일 업로드를 권장합니다.</p>',
+      '<p class="ppu-desc">폰트는 아웃라인 처리 후 업로드해 주세요.</p>',
+      '<div class="ppu-guide" aria-label="업로드 전 확인 사항">',
+      '<p class="ppu-guide-title">업로드 전 확인해 주세요</p>',
+      '<ul class="ppu-checklist">',
+      '<li>폰트 아웃라인 처리</li>',
+      '<li>이미지 링크 포함 또는 포함 저장</li>',
+      '<li>칼선/도무송 선 포함</li>',
+      '<li>최종 인쇄 파일 확인</li>',
+      '<li>여러 파일은 ZIP으로 압축</li>',
+      "</ul>",
+      "</div>",
+      '<form class="ppu-form">',
+      '<p class="ppu-file-help">파일을 선택한 뒤 업로드 버튼을 눌러주세요.</p>',
+      '<p class="ppu-file-help">파일명에는 업체명 또는 상품명을 포함해 주시면 확인이 더 쉽습니다.</p>',
+      '<div class="ppu-file-row">',
+      '<input class="ppu-file" name="file" type="file" required aria-label="인쇄용 파일 선택">',
+      '<button class="ppu-button" type="submit">파일 업로드</button>',
+      "</div>",
+      '<p class="ppu-status" role="status"></p>',
+      '<div class="ppu-result" hidden></div>',
+      "</form>"
+    ].join("");
+
+    var target = findInsertTarget();
+    target.appendChild(wrapper);
+    bindForm(wrapper);
+  }
+
+  function bindForm(wrapper) {
+    var form = wrapper.querySelector("form");
+    var fileInput = wrapper.querySelector("input[type='file']");
+    var button = wrapper.querySelector("button[type='submit']");
+    var status = wrapper.querySelector(".ppu-status");
+    var result = wrapper.querySelector(".ppu-result");
+    var appOrigin = getAppOrigin();
+    var currentUpload = null;
+
+    result.addEventListener("click", function (event) {
+      var actionButton = event.target && event.target.closest && event.target.closest("[data-ppu-action]");
+      if (!actionButton) return;
+
+      var action = actionButton.getAttribute("data-ppu-action");
+
+      if (action === "retry-file-id") {
+        if (!currentUpload || !currentUpload.fileId) {
+          showMessage(status, result, "다시 입력할 업로드 파일 ID가 없습니다.", true);
+          return;
+        }
+
+        var retryResult = applyFileIdToCafe24Input(currentUpload.fileId);
+        currentUpload.cafe24InputResult = retryResult;
+
+        if (retryResult.status === "success") {
+          status.className = "ppu-status ppu-success";
+          status.textContent = "업로드 파일 ID가 입력 옵션에 다시 반영되었습니다.";
+          renderUploadResult(result, currentUpload.uploaded, currentUpload.fileId, retryResult);
+        } else {
+          status.className = "ppu-status ppu-warning";
+          status.textContent = "상품 옵션을 먼저 선택한 뒤 다시 눌러주세요.";
+          renderUploadResult(result, currentUpload.uploaded, currentUpload.fileId, retryResult);
+        }
+      }
+
+      if (action === "reset-upload") {
+        currentUpload = null;
+        form.reset();
+        fileInput.value = "";
+        button.disabled = false;
+        status.className = "ppu-status";
+        status.textContent = "새 파일을 선택한 뒤 업로드 버튼을 눌러주세요.";
+        result.hidden = true;
+        result.textContent = "";
+      }
+    });
+
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+
+      var file = fileInput.files && fileInput.files[0];
+      if (!file) {
+        showMessage(status, result, "업로드할 파일을 선택해 주세요.", true);
+        return;
+      }
+
+      if (!appOrigin) {
+        showMessage(status, result, "업로드 서버 주소를 확인할 수 없습니다.", true);
+        return;
+      }
+
+      var fileIdInputMatch = findFileIdInput();
+      if (!fileIdInputMatch || !fileIdInputMatch.element) {
+        status.className = "ppu-status ppu-warning";
+        status.textContent = "먼저 상품 옵션을 선택해 주세요. 옵션 선택 후 파일 업로드를 진행할 수 있습니다.";
+        result.hidden = true;
+        result.textContent = "";
+        return;
+      }
+
+      var formData = new FormData();
+      formData.append("file", file);
+      formData.append("mall_id", resolveMallId());
+      formData.append("shop_no", resolveShopNo());
+      formData.append("product_no", resolveProductNo());
+      formData.append("customer_type", "cafe24-product-detail");
+      formData.append("customer_identifier", window.location.href);
+
+      button.disabled = true;
+      status.className = "ppu-status";
+      status.textContent = "파일을 업로드하는 중입니다. 잠시만 기다려 주세요.";
+      result.hidden = true;
+      result.textContent = "";
+
+      fetch(appOrigin + "/api/files/upload", {
+        method: "POST",
+        body: formData
+      })
+        .then(function (response) {
+          return response.json().catch(function () {
+            return {};
+          }).then(function (json) {
+            if (!response.ok || !json.ok) {
+              throw new Error(json.message || "파일 업로드에 실패했습니다.");
+            }
+            return json;
+          });
+        })
+        .then(function (json) {
+          var uploaded = json.file || {};
+          var fileId = uploaded.id || json.id || "";
+          var cafe24InputResult = applyFileIdToCafe24Input(fileId, fileIdInputMatch);
+          currentUpload = {
+            uploaded: uploaded,
+            fileId: fileId,
+            cafe24InputResult: cafe24InputResult
+          };
+          status.className = "ppu-status ppu-success";
+          status.textContent = cafe24InputResult.status === "success"
+            ? "파일 업로드가 완료되었습니다. 주문 시 업로드 파일 ID가 함께 전달됩니다."
+            : "파일 업로드가 완료되었습니다. 상품 옵션을 선택한 뒤 업로드 파일 ID 다시 입력하기를 눌러주세요.";
+          renderUploadResult(result, uploaded, fileId, cafe24InputResult);
+          form.reset();
+        })
+        .catch(function () {
+          showMessage(
+            status,
+            result,
+            "파일 업로드에 실패했습니다. 파일 용량이 너무 크거나 네트워크가 불안정할 수 있습니다. 다시 시도해 주세요.",
+            true
+          );
         })
         .finally(function () {
           button.disabled = false;
