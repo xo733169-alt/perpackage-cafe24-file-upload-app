@@ -55,6 +55,9 @@ export function AdminFileStatusForm({ fileId, currentStatus, variant = "default"
       <p style={{ marginTop: 0, marginBottom: isCompact ? 8 : undefined }}>
         현재 상태: <strong>{getFileStatusLabel(currentStatus)}</strong>
       </p>
+      <p style={{ marginTop: 0, marginBottom: isCompact ? 8 : 12 }}>
+        재업로드 요청, 새 파일로 교체됨, 보관 처리는 관리자가 직접 판단해 변경하는 상태입니다.
+      </p>
       <form className={isCompact ? "form form-compact" : "form"} onSubmit={handleSubmit}>
         <div className="field">
           <label htmlFor={`file_status_${fileId}`}>상태 선택</label>

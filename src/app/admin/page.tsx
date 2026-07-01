@@ -885,6 +885,39 @@ function getCafe24UploadFileMatchMessage(match: Cafe24UploadFileMatch) {
   return "Supabase files에서 해당 파일을 찾지 못했습니다.";
 }
 
+function getOrderFilePosition(file: UploadedFileRecord, index: number) {
+  if (file.status === "need_reupload") {
+    return {
+      label: "재업로드 요청",
+      tone: "warning" as const
+    };
+  }
+
+  if (file.status === "replaced") {
+    return {
+      label: "새 파일로 교체됨",
+      tone: "previous" as const
+    };
+  }
+
+  if (file.status === "archived") {
+    return {
+      label: "보관 처리",
+      tone: "archived" as const
+    };
+  }
+
+  return index === 0
+    ? {
+      label: "최신 파일",
+      tone: "current" as const
+    }
+    : {
+      label: "이전 파일",
+      tone: "previous" as const
+    };
+}
+
 function Cafe24OrderFileMatchPanel({
   lookup,
   linkMessage
@@ -1080,13 +1113,27 @@ function OrderLinkPanel({
 
 function OrderFileResultCard({
   file,
-  statusLogs
+  statusLogs,
+  positionLabel,
+  positionTone
 }: {
   file: UploadedFileRecord;
   statusLogs: FileStatusChangeLogRecord[];
+  positionLabel: string;
+  positionTone: "current" | "previous" | "warning" | "archived";
 }) {
+  const positionClassName = positionTone === "current"
+    ? "status status-success"
+    : positionTone === "warning"
+      ? "status status-warning"
+      : "status";
+
   return (
     <div className="notice" style={{ marginTop: 14 }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
+        <span className={positionClassName}>{positionLabel}</span>
+        <span className="status">{getFileStatusLabel(file.status)}</span>
+      </div>
       <div className="grid grid-3">
         <FileLookupField label="original_filename" value={file.original_filename} />
         <FileLookupField label="file_id" value={file.id} />
@@ -1311,13 +1358,23 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
             <p className="lead">
               주문번호 {data.orderLookup.query}에 연결된 파일 {data.orderLookup.files.length}개
             </p>
-            {data.orderLookup.files.map((file) => (
-              <OrderFileResultCard
-                key={file.id}
-                file={file}
-                statusLogs={data.orderLookup.statusLogMap[file.id] ?? []}
-              />
-            ))}
+            <p>
+              같은 주문번호의 파일은 업로드 일시 기준 최신순으로 표시합니다. 첫 번째 파일은 최신 파일로 보고,
+              새 파일로 교체됨 또는 보관 처리 상태는 이전/보관 파일로 구분합니다.
+            </p>
+            {data.orderLookup.files.map((file, index) => {
+              const position = getOrderFilePosition(file, index);
+
+              return (
+                <OrderFileResultCard
+                  key={file.id}
+                  file={file}
+                  positionLabel={position.label}
+                  positionTone={position.tone}
+                  statusLogs={data.orderLookup.statusLogMap[file.id] ?? []}
+                />
+              );
+            })}
           </div>
         ) : null}
       </section>
