@@ -23,6 +23,8 @@ export type AdminDownloadLogFilters = {
   fileId?: string | null;
   orderId?: string | null;
   result?: AdminDownloadLogResultFilter;
+  startDate?: string | null;
+  endDate?: string | null;
   limit?: number;
 };
 
@@ -65,6 +67,31 @@ function normalizeLimit(value?: number) {
 
 function isUuidLike(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
+
+function getKoreaDateBoundaryIso(value: string | null | undefined, boundary: "start" | "end") {
+  const dateText = value?.trim() ?? "";
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateText);
+  if (!match) {
+    return null;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const utcStart = Date.UTC(year, month - 1, day) - 9 * 60 * 60 * 1000;
+  const parsed = new Date(utcStart + 9 * 60 * 60 * 1000);
+
+  if (
+    parsed.getUTCFullYear() !== year ||
+    parsed.getUTCMonth() !== month - 1 ||
+    parsed.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  const timestamp = boundary === "start" ? utcStart : utcStart + 24 * 60 * 60 * 1000 - 1;
+  return new Date(timestamp).toISOString();
 }
 
 export async function createFileDownloadLog(input: CreateFileDownloadLogInput) {
@@ -133,6 +160,8 @@ export async function listAdminDownloadLogs(filters: AdminDownloadLogFilters = {
   const fileIdFilter = filters.fileId?.trim() ?? "";
   const orderIdFilter = filters.orderId?.trim() ?? "";
   const resultFilter = normalizeResultFilter(filters.result);
+  const startDateIso = getKoreaDateBoundaryIso(filters.startDate, "start");
+  const endDateIso = getKoreaDateBoundaryIso(filters.endDate, "end");
   const limit = normalizeLimit(filters.limit);
   const shouldFilterFileIdInMemory = Boolean(fileIdFilter && !isUuidLike(fileIdFilter));
   const queryLimit = shouldFilterFileIdInMemory ? Math.max(500, limit) : limit;
@@ -173,6 +202,14 @@ export async function listAdminDownloadLogs(filters: AdminDownloadLogFilters = {
     query = query.in("result", ["failed", "error"]);
   }
 
+  if (startDateIso) {
+    query = query.gte("downloaded_at", startDateIso);
+  }
+
+  if (endDateIso) {
+    query = query.lte("downloaded_at", endDateIso);
+  }
+
   if (orderFileIds?.length) {
     query = query.in("file_id", orderFileIds);
   }
@@ -189,7 +226,9 @@ export async function listAdminDownloadLogs(filters: AdminDownloadLogFilters = {
       message: sanitizeErrorMessage(error.message),
       resultFilter,
       hasFileIdFilter: Boolean(fileIdFilter),
-      hasOrderIdFilter: Boolean(orderIdFilter)
+      hasOrderIdFilter: Boolean(orderIdFilter),
+      hasStartDateFilter: Boolean(startDateIso),
+      hasEndDateFilter: Boolean(endDateIso)
     });
     throw new Error("Failed to load download logs.");
   }

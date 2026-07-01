@@ -8,7 +8,6 @@ import {
   type AdminDownloadLogResultFilter
 } from "@/lib/files/download-log-service";
 
-const CSV_FILENAME = "perpackage-file-download-logs.csv";
 const CSV_EXPORT_LIMIT = 1000;
 
 function getResultFilter(value: string | null): AdminDownloadLogResultFilter {
@@ -20,16 +19,55 @@ function csvCell(value: string | number | null | undefined) {
   return `"${text.replace(/"/g, '""')}"`;
 }
 
+function getValidDateText(value: string | null) {
+  const dateText = value?.trim() ?? "";
+  return /^\d{4}-\d{2}-\d{2}$/.test(dateText) ? dateText : "";
+}
+
+function compactDate(value: string) {
+  return value.replace(/-/g, "");
+}
+
+function getKoreaTodayCompact() {
+  const parts = new Intl.DateTimeFormat("en", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(new Date());
+  const year = parts.find((part) => part.type === "year")?.value ?? "0000";
+  const month = parts.find((part) => part.type === "month")?.value ?? "00";
+  const day = parts.find((part) => part.type === "day")?.value ?? "00";
+
+  return `${year}${month}${day}`;
+}
+
+function buildCsvFilename(startDate: string, endDate: string) {
+  if (startDate && endDate) {
+    return `perpackage-download-logs-${compactDate(startDate)}-${compactDate(endDate)}.csv`;
+  }
+
+  if (startDate) {
+    return `perpackage-download-logs-from-${compactDate(startDate)}.csv`;
+  }
+
+  if (endDate) {
+    return `perpackage-download-logs-until-${compactDate(endDate)}.csv`;
+  }
+
+  return `perpackage-download-logs-${getKoreaTodayCompact()}.csv`;
+}
+
 function buildDownloadLogsCsv(logs: AdminDownloadLogRecord[]) {
   const headers = [
-    "downloaded_at",
-    "original_filename",
-    "file_id",
-    "order_id",
-    "result",
-    "ip_address",
-    "user_agent",
-    "error_message"
+    "다운로드 일시",
+    "파일명",
+    "파일 ID",
+    "Cafe24 주문번호",
+    "결과",
+    "IP 주소",
+    "브라우저",
+    "오류 메시지"
   ];
 
   const rows = logs.map((log) => [
@@ -56,6 +94,8 @@ export async function GET(request: Request) {
   }
 
   const url = new URL(request.url);
+  const startDate = getValidDateText(url.searchParams.get("download_start_date"));
+  const endDate = getValidDateText(url.searchParams.get("download_end_date"));
   let csv = "";
 
   try {
@@ -63,6 +103,8 @@ export async function GET(request: Request) {
       fileId: url.searchParams.get("download_file_id"),
       orderId: url.searchParams.get("download_order_id"),
       result: getResultFilter(url.searchParams.get("download_result")),
+      startDate,
+      endDate,
       limit: CSV_EXPORT_LIMIT
     });
     csv = buildDownloadLogsCsv(logs);
@@ -76,7 +118,7 @@ export async function GET(request: Request) {
   return new NextResponse(`\uFEFF${csv}`, {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="${CSV_FILENAME}"`,
+      "Content-Disposition": `attachment; filename="${buildCsvFilename(startDate, endDate)}"`,
       "Cache-Control": "no-store"
     }
   });

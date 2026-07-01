@@ -57,6 +57,8 @@ type AdminPageProps = {
     download_file_id?: string | string[];
     download_order_id?: string | string[];
     download_result?: string | string[];
+    download_start_date?: string | string[];
+    download_end_date?: string | string[];
   };
 };
 
@@ -72,6 +74,8 @@ function readParam(
     | "download_file_id"
     | "download_order_id"
     | "download_result"
+    | "download_start_date"
+    | "download_end_date"
 ) {
   const value = searchParams?.[key];
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
@@ -112,11 +116,15 @@ function getDownloadResultFilter(value: string): AdminDownloadLogResultFilter {
 function buildDownloadLogExportHref({
   fileId,
   orderId,
-  result
+  result,
+  startDate,
+  endDate
 }: {
   fileId: string;
   orderId: string;
   result: AdminDownloadLogResultFilter;
+  startDate: string;
+  endDate: string;
 }) {
   const params = new URLSearchParams();
 
@@ -130,6 +138,14 @@ function buildDownloadLogExportHref({
 
   if (result !== "all") {
     params.set("download_result", result);
+  }
+
+  if (startDate) {
+    params.set("download_start_date", startDate);
+  }
+
+  if (endDate) {
+    params.set("download_end_date", endDate);
   }
 
   const query = params.toString();
@@ -266,7 +282,9 @@ async function getAdminData(
   recentOrderLinkFilter: RecentFileOrderLinkFilter,
   downloadFileIdFilter: string,
   downloadOrderIdFilter: string,
-  downloadResultFilter: AdminDownloadLogResultFilter
+  downloadResultFilter: AdminDownloadLogResultFilter,
+  downloadStartDateFilter: string,
+  downloadEndDateFilter: string
 ) {
   const cafe24 = getCafe24ConfigStatus();
   const supabase = getSupabaseConfigStatus();
@@ -300,6 +318,8 @@ async function getAdminData(
       fileId: downloadFileIdFilter,
       orderId: downloadOrderIdFilter,
       result: downloadResultFilter,
+      startDate: downloadStartDateFilter,
+      endDate: downloadEndDateFilter,
       limit: 50
     });
   } catch (error) {
@@ -601,10 +621,14 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
   const downloadFileIdFilter = readParam(searchParams, "download_file_id").trim();
   const downloadOrderIdFilter = readParam(searchParams, "download_order_id").trim();
   const downloadResultFilter = getDownloadResultFilter(readParam(searchParams, "download_result"));
+  const downloadStartDateFilter = readParam(searchParams, "download_start_date").trim();
+  const downloadEndDateFilter = readParam(searchParams, "download_end_date").trim();
   const downloadLogsExportHref = buildDownloadLogExportHref({
     fileId: downloadFileIdFilter,
     orderId: downloadOrderIdFilter,
-    result: downloadResultFilter
+    result: downloadResultFilter,
+    startDate: downloadStartDateFilter,
+    endDate: downloadEndDateFilter
   });
   const orderLinkMessage = getOrderLinkMessage(readParam(searchParams, "order_link"));
   const data = await getAdminData(
@@ -616,7 +640,9 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     recentOrderLinkFilter,
     downloadFileIdFilter,
     downloadOrderIdFilter,
-    downloadResultFilter
+    downloadResultFilter,
+    downloadStartDateFilter,
+    downloadEndDateFilter
   );
   const isSupabaseConfigured = data.supabase.hasUrl && data.supabase.hasAnonKey && data.supabase.hasServiceRoleKey;
 
@@ -775,6 +801,12 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
           {downloadFileIdFilter ? <input name="download_file_id" type="hidden" value={downloadFileIdFilter} /> : null}
           {downloadOrderIdFilter ? <input name="download_order_id" type="hidden" value={downloadOrderIdFilter} /> : null}
           {downloadResultFilter !== "all" ? <input name="download_result" type="hidden" value={downloadResultFilter} /> : null}
+          {downloadStartDateFilter ? (
+            <input name="download_start_date" type="hidden" value={downloadStartDateFilter} />
+          ) : null}
+          {downloadEndDateFilter ? (
+            <input name="download_end_date" type="hidden" value={downloadEndDateFilter} />
+          ) : null}
           <div className="grid grid-3">
             <div className="field">
               <label htmlFor="recent_status">상태</label>
@@ -893,6 +925,24 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                 <option value="success">성공</option>
                 <option value="failed">실패</option>
               </select>
+            </div>
+            <div className="field">
+              <label htmlFor="download_start_date">시작일</label>
+              <input
+                id="download_start_date"
+                name="download_start_date"
+                type="date"
+                defaultValue={downloadStartDateFilter}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="download_end_date">종료일</label>
+              <input
+                id="download_end_date"
+                name="download_end_date"
+                type="date"
+                defaultValue={downloadEndDateFilter}
+              />
             </div>
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
