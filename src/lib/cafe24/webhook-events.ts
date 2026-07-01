@@ -33,6 +33,8 @@ export type Cafe24WebhookProcessedStatus =
   | "conflict_order_id"
   | "failed";
 
+export type Cafe24WebhookStatusFilter = Cafe24WebhookProcessedStatus | "all";
+
 export type Cafe24WebhookPayloadSummary = {
   topLevelKeys: string[];
   mallId: string | null;
@@ -288,13 +290,22 @@ export async function updateCafe24WebhookEventProcessing(input: {
   return data as Cafe24WebhookEventRecord;
 }
 
-export async function listRecentCafe24WebhookEvents(limit = 10): Promise<Cafe24WebhookEventRecord[]> {
+export async function listRecentCafe24WebhookEvents(
+  limit = 10,
+  processedStatus: Cafe24WebhookStatusFilter = "all"
+): Promise<Cafe24WebhookEventRecord[]> {
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
+  let query = supabase
     .from("cafe24_webhook_events")
     .select("*")
     .order("received_at", { ascending: false })
     .limit(limit);
+
+  if (processedStatus !== "all") {
+    query = query.eq("processed_status", processedStatus);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     console.error("cafe24_webhook_events_load_failed", {

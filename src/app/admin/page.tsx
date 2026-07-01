@@ -13,6 +13,7 @@ import { getCafe24Installation } from "@/lib/cafe24/token-store";
 import {
   listRecentCafe24WebhookEvents,
   summarizeCafe24WebhookPayload,
+  type Cafe24WebhookStatusFilter,
   type Cafe24WebhookProcessedStatus,
   type Cafe24WebhookEventRecord
 } from "@/lib/cafe24/webhook-events";
@@ -89,6 +90,7 @@ type AdminPageProps = {
     download_result?: string | string[];
     download_start_date?: string | string[];
     download_end_date?: string | string[];
+    webhook_status?: string | string[];
   };
 };
 
@@ -108,6 +110,7 @@ function readParam(
     | "download_result"
     | "download_start_date"
     | "download_end_date"
+    | "webhook_status"
 ) {
   const value = searchParams?.[key];
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
@@ -207,6 +210,18 @@ const WEBHOOK_STATUS_LABELS: Record<Cafe24WebhookProcessedStatus, string> = {
   failed: "처리 실패"
 };
 
+const WEBHOOK_STATUS_FILTER_OPTIONS: Array<{ value: Cafe24WebhookStatusFilter; label: string }> = [
+  { value: "all", label: "전체" },
+  { value: "received", label: WEBHOOK_STATUS_LABELS.received },
+  { value: "auto_linked", label: WEBHOOK_STATUS_LABELS.auto_linked },
+  { value: "already_linked", label: WEBHOOK_STATUS_LABELS.already_linked },
+  { value: "no_order_id", label: WEBHOOK_STATUS_LABELS.no_order_id },
+  { value: "no_file_id", label: WEBHOOK_STATUS_LABELS.no_file_id },
+  { value: "file_not_found", label: WEBHOOK_STATUS_LABELS.file_not_found },
+  { value: "conflict_order_id", label: WEBHOOK_STATUS_LABELS.conflict_order_id },
+  { value: "failed", label: WEBHOOK_STATUS_LABELS.failed }
+];
+
 const WEBHOOK_WARNING_STATUSES = new Set<Cafe24WebhookProcessedStatus>([
   "no_order_id",
   "no_file_id",
@@ -241,6 +256,64 @@ function getWebhookStatusClassName(status: string) {
 
 function getWebhookEventTypeLabel(eventType: string) {
   return WEBHOOK_EVENT_TYPE_LABELS[eventType] ?? eventType;
+}
+
+function getWebhookStatusFilter(value: string): Cafe24WebhookStatusFilter {
+  return WEBHOOK_STATUS_FILTER_OPTIONS.some((option) => option.value === value)
+    ? (value as Cafe24WebhookStatusFilter)
+    : "all";
+}
+
+type AdminPreservedQuery = {
+  fileId: string;
+  orderId: string;
+  cafe24OrderId: string;
+  recentStatus: string;
+  recentOrderLink: RecentFileOrderLinkFilter;
+  downloadFileId: string;
+  downloadOrderId: string;
+  downloadResult: AdminDownloadLogResultFilter;
+  downloadStartDate: string;
+  downloadEndDate: string;
+};
+
+function buildAdminHrefFromPreservedQuery(values: AdminPreservedQuery) {
+  const params = new URLSearchParams();
+
+  if (values.fileId) params.set("file_id", values.fileId);
+  if (values.orderId) params.set("order_id", values.orderId);
+  if (values.cafe24OrderId) params.set("cafe24_order_id", values.cafe24OrderId);
+  if (values.recentStatus !== "all") params.set("recent_status", values.recentStatus);
+  if (values.recentOrderLink !== "all") params.set("recent_order_link", values.recentOrderLink);
+  if (values.downloadFileId) params.set("download_file_id", values.downloadFileId);
+  if (values.downloadOrderId) params.set("download_order_id", values.downloadOrderId);
+  if (values.downloadResult !== "all") params.set("download_result", values.downloadResult);
+  if (values.downloadStartDate) params.set("download_start_date", values.downloadStartDate);
+  if (values.downloadEndDate) params.set("download_end_date", values.downloadEndDate);
+
+  const query = params.toString();
+  return `/admin${query ? `?${query}` : ""}`;
+}
+
+function AdminPreservedQueryInputs({ values }: { values: AdminPreservedQuery }) {
+  return (
+    <>
+      {values.fileId ? <input name="file_id" type="hidden" value={values.fileId} /> : null}
+      {values.orderId ? <input name="order_id" type="hidden" value={values.orderId} /> : null}
+      {values.cafe24OrderId ? <input name="cafe24_order_id" type="hidden" value={values.cafe24OrderId} /> : null}
+      {values.recentStatus !== "all" ? <input name="recent_status" type="hidden" value={values.recentStatus} /> : null}
+      {values.recentOrderLink !== "all" ? (
+        <input name="recent_order_link" type="hidden" value={values.recentOrderLink} />
+      ) : null}
+      {values.downloadFileId ? <input name="download_file_id" type="hidden" value={values.downloadFileId} /> : null}
+      {values.downloadOrderId ? <input name="download_order_id" type="hidden" value={values.downloadOrderId} /> : null}
+      {values.downloadResult !== "all" ? <input name="download_result" type="hidden" value={values.downloadResult} /> : null}
+      {values.downloadStartDate ? (
+        <input name="download_start_date" type="hidden" value={values.downloadStartDate} />
+      ) : null}
+      {values.downloadEndDate ? <input name="download_end_date" type="hidden" value={values.downloadEndDate} /> : null}
+    </>
+  );
 }
 
 function getOrderLinkMessage(status: string) {
@@ -441,7 +514,8 @@ async function getAdminData(
   downloadOrderIdFilter: string,
   downloadResultFilter: AdminDownloadLogResultFilter,
   downloadStartDateFilter: string,
-  downloadEndDateFilter: string
+  downloadEndDateFilter: string,
+  webhookStatusFilter: Cafe24WebhookStatusFilter
 ) {
   const cafe24 = getCafe24ConfigStatus();
   const supabase = getSupabaseConfigStatus();
@@ -486,7 +560,7 @@ async function getAdminData(
   }
 
   try {
-    cafe24WebhookEvents = await listRecentCafe24WebhookEvents(10);
+    cafe24WebhookEvents = await listRecentCafe24WebhookEvents(10, webhookStatusFilter);
   } catch (error) {
     dataError = dataError ?? (error instanceof Error ? error.message : "Failed to load Cafe24 webhook events.");
   }
@@ -591,13 +665,43 @@ function DownloadLogPanel({ logs }: { logs: FileDownloadLogRecord[] }) {
   );
 }
 
-function Cafe24WebhookEventsPanel({ events }: { events: Cafe24WebhookEventRecord[] }) {
+function Cafe24WebhookEventsPanel({
+  events,
+  selectedStatus,
+  preservedQuery
+}: {
+  events: Cafe24WebhookEventRecord[];
+  selectedStatus: Cafe24WebhookStatusFilter;
+  preservedQuery: AdminPreservedQuery;
+}) {
   return (
     <section className="panel panel-pad">
       <h2>Cafe24 Webhook 수신 로그</h2>
       <p className="lead">
         Cafe24 Webhook 요청이 실제로 들어오는지 확인하기 위한 최근 수신 로그입니다. payload 전체가 아니라 안전한 요약만 표시합니다.
       </p>
+      <form className="form" method="get" style={{ marginTop: 16 }}>
+        <AdminPreservedQueryInputs values={preservedQuery} />
+        <div className="grid grid-3">
+          <div className="field">
+            <label htmlFor="webhook_status">처리 상태 필터</label>
+            <select id="webhook_status" name="webhook_status" defaultValue={selectedStatus}>
+              {WEBHOOK_STATUS_FILTER_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <span>&nbsp;</span>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button className="button" type="submit">필터 적용</button>
+              <a className="button secondary" href={buildAdminHrefFromPreservedQuery(preservedQuery)}>초기화</a>
+            </div>
+          </div>
+        </div>
+      </form>
       <div className="table-wrap" style={{ marginTop: 16 }}>
         <table>
           <thead>
@@ -1032,6 +1136,19 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
   const downloadResultFilter = getDownloadResultFilter(readParam(searchParams, "download_result"));
   const downloadStartDateFilter = readParam(searchParams, "download_start_date").trim();
   const downloadEndDateFilter = readParam(searchParams, "download_end_date").trim();
+  const webhookStatusFilter = getWebhookStatusFilter(readParam(searchParams, "webhook_status"));
+  const preservedQuery: AdminPreservedQuery = {
+    fileId: fileIdQuery,
+    orderId: orderIdQuery,
+    cafe24OrderId: cafe24OrderIdQuery,
+    recentStatus: recentStatusFilter,
+    recentOrderLink: recentOrderLinkFilter,
+    downloadFileId: downloadFileIdFilter,
+    downloadOrderId: downloadOrderIdFilter,
+    downloadResult: downloadResultFilter,
+    downloadStartDate: downloadStartDateFilter,
+    downloadEndDate: downloadEndDateFilter
+  };
   const downloadLogsExportHref = buildDownloadLogExportHref({
     fileId: downloadFileIdFilter,
     orderId: downloadOrderIdFilter,
@@ -1054,7 +1171,8 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     downloadOrderIdFilter,
     downloadResultFilter,
     downloadStartDateFilter,
-    downloadEndDateFilter
+    downloadEndDateFilter,
+    webhookStatusFilter
   );
   const isSupabaseConfigured = data.supabase.hasUrl && data.supabase.hasAnonKey && data.supabase.hasServiceRoleKey;
 
@@ -1114,7 +1232,11 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
 
       <Cafe24OrderApiLookupPanel lookup={data.cafe24OrderLookup} linkMessage={cafe24AutoLinkMessage} />
 
-      <Cafe24WebhookEventsPanel events={data.cafe24WebhookEvents} />
+      <Cafe24WebhookEventsPanel
+        events={data.cafe24WebhookEvents}
+        selectedStatus={webhookStatusFilter}
+        preservedQuery={preservedQuery}
+      />
 
       <section className="panel panel-pad">
         <h2>주문번호로 업로드 파일 찾기</h2>
