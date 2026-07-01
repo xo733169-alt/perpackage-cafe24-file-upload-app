@@ -1,6 +1,10 @@
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
-const SENSITIVE_KEY_PATTERN = /(authorization|access_token|refresh_token|client_secret|secret|token|signature|password|cookie|api[-_]?key)/i;
+const SENSITIVE_KEY_PATTERN =
+  /(authorization|bearer|token|access_token|refresh_token|client_secret|secret|signature|password|cookie|x-api-key|api[-_]?key|api_key|x-vercel-oidc-token|x-vercel-sc-headers|x-vercel-proxy-signature|x-vercel-proxy-signature-ts|forwarded)/i;
+const SENSITIVE_VALUE_PATTERN =
+  /(authorization|bearer|token|access_token|refresh_token|client_secret|secret|signature|password|cookie|x-api-key|api[-_]?key|api_key|x-vercel-oidc-token|x-vercel-sc-headers|x-vercel-proxy-signature|x-vercel-proxy-signature-ts|forwarded)/i;
+const JWT_PATTERN = /\b[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\b/;
 const MAX_STRING_LENGTH = 1000;
 
 export type JsonPrimitive = string | number | boolean | null;
@@ -50,6 +54,14 @@ function truncate(value: string, maxLength = MAX_STRING_LENGTH) {
   return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
 }
 
+function shouldMaskSensitiveText(value: string) {
+  return SENSITIVE_VALUE_PATTERN.test(value) || JWT_PATTERN.test(value);
+}
+
+function maskStringIfSensitive(value: string, maxLength = MAX_STRING_LENGTH) {
+  return shouldMaskSensitiveText(value) ? "[masked]" : truncate(value, maxLength);
+}
+
 function getNestedRecordValue(payload: unknown, path: string[]) {
   let current: unknown = payload;
   for (const segment of path) {
@@ -90,7 +102,7 @@ export function sanitizeJsonValue(value: unknown, key = "", depth = 0): JsonValu
   if (value === null || value === undefined) return null;
 
   if (typeof value === "string") {
-    return truncate(value);
+    return maskStringIfSensitive(value);
   }
 
   if (typeof value === "number" || typeof value === "boolean") {
@@ -119,7 +131,7 @@ export function summarizeHeaders(headers: Headers): Record<string, string> {
 
   headers.forEach((value, key) => {
     const normalizedKey = key.toLowerCase();
-    if (SENSITIVE_KEY_PATTERN.test(normalizedKey)) {
+    if (SENSITIVE_KEY_PATTERN.test(normalizedKey) || shouldMaskSensitiveText(value)) {
       summary[normalizedKey] = "[masked]";
       return;
     }
