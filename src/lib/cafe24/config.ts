@@ -3,7 +3,8 @@ export const DEFAULT_CAFE24_SCOPES = [
   "mall.read_application",
   "mall.read_product",
   "mall.read_category",
-  "mall.read_community"
+  "mall.read_community",
+  "mall.read_order"
 ];
 
 export type Cafe24Config = {

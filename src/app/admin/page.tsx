@@ -3,6 +3,7 @@ import { AdminFileStatusForm } from "@/components/AdminFileStatusForm";
 import { CopyFileIdButton } from "@/components/CopyFileIdButton";
 import { getAdminAuthConfigStatus, isAdminAuthenticated } from "@/lib/admin/auth";
 import { getCafe24ConfigStatus } from "@/lib/cafe24/config";
+import { fetchCafe24OrderLookup, type Cafe24OrderLookupSummary } from "@/lib/cafe24/order-lookup";
 import { getCafe24Installation } from "@/lib/cafe24/token-store";
 import {
   listAdminDownloadLogs,
@@ -46,12 +47,20 @@ type OrderLookupState = {
   status: "idle" | "found" | "not_found" | "empty" | "error";
 };
 
+type Cafe24OrderApiLookupState = {
+  query: string;
+  order: Cafe24OrderLookupSummary | null;
+  message: string | null;
+  status: "idle" | "found" | "empty" | "error";
+};
+
 type AdminPageProps = {
   searchParams?: {
     auth?: string | string[];
     file_id?: string | string[];
     order_link?: string | string[];
     order_id?: string | string[];
+    cafe24_order_id?: string | string[];
     recent_status?: string | string[];
     recent_order_link?: string | string[];
     download_file_id?: string | string[];
@@ -69,6 +78,7 @@ function readParam(
     | "file_id"
     | "order_link"
     | "order_id"
+    | "cafe24_order_id"
     | "recent_status"
     | "recent_order_link"
     | "download_file_id"
@@ -87,6 +97,10 @@ function hasFileIdParam(searchParams?: AdminPageProps["searchParams"]) {
 
 function hasOrderIdParam(searchParams?: AdminPageProps["searchParams"]) {
   return Boolean(searchParams && Object.prototype.hasOwnProperty.call(searchParams, "order_id"));
+}
+
+function hasCafe24OrderIdParam(searchParams?: AdminPageProps["searchParams"]) {
+  return Boolean(searchParams && Object.prototype.hasOwnProperty.call(searchParams, "cafe24_order_id"));
 }
 
 function formatEmpty(value: string | number | null | undefined, emptyText = "-") {
@@ -273,11 +287,42 @@ async function lookupFilesByOrderId(rawOrderId: string, shouldSearch: boolean): 
   }
 }
 
+async function lookupCafe24OrderById(rawOrderId: string, shouldSearch: boolean): Promise<Cafe24OrderApiLookupState> {
+  const query = rawOrderId.trim();
+
+  if (!shouldSearch) {
+    return { query: "", order: null, message: null, status: "idle" };
+  }
+
+  if (!query) {
+    return {
+      query: rawOrderId,
+      order: null,
+      message: "Cafe24 주문번호를 입력해 주세요.",
+      status: "empty"
+    };
+  }
+
+  try {
+    const order = await fetchCafe24OrderLookup(query);
+    return { query, order, message: null, status: "found" };
+  } catch (error) {
+    return {
+      query,
+      order: null,
+      message: error instanceof Error ? error.message : "Cafe24 주문 조회에 실패했습니다.",
+      status: "error"
+    };
+  }
+}
+
 async function getAdminData(
   fileIdQuery: string,
   shouldSearchFileId: boolean,
   orderIdQuery: string,
   shouldSearchOrderId: boolean,
+  cafe24OrderIdQuery: string,
+  shouldSearchCafe24OrderId: boolean,
   recentStatusFilter: string,
   recentOrderLinkFilter: RecentFileOrderLinkFilter,
   downloadFileIdFilter: string,
@@ -297,6 +342,7 @@ async function getAdminData(
     lookupFileById(fileIdQuery, shouldSearchFileId),
     lookupFilesByOrderId(orderIdQuery, shouldSearchOrderId)
   ]);
+  const cafe24OrderLookup = await lookupCafe24OrderById(cafe24OrderIdQuery, shouldSearchCafe24OrderId);
 
   try {
     installation = await getCafe24Installation();
@@ -326,7 +372,7 @@ async function getAdminData(
     dataError = dataError ?? (error instanceof Error ? error.message : "Failed to load download logs.");
   }
 
-  return { cafe24, supabase, storage, installation, files, adminDownloadLogs, dataError, fileLookup, orderLookup };
+  return { cafe24, supabase, storage, installation, files, adminDownloadLogs, dataError, fileLookup, orderLookup, cafe24OrderLookup };
 }
 
 function FileLookupField({
@@ -489,6 +535,106 @@ function StatusChangeLogPanel({ logs }: { logs: FileStatusChangeLogRecord[] }) {
   );
 }
 
+function Cafe24OrderApiLookupPanel({ lookup }: { lookup: Cafe24OrderApiLookupState }) {
+  return (
+    <section className="panel panel-pad">
+      <h2>Cafe24 주문 조회 테스트</h2>
+      <p className="lead">
+        Cafe24 Admin API로 주문 상세를 조회해 상품 옵션 안의 업로드 파일 ID가 API 응답에 포함되는지 확인합니다.
+        이 기능은 조회 테스트 전용이며 Supabase files.order_id를 자동 업데이트하지 않습니다.
+      </p>
+      <form className="form" method="get" style={{ marginTop: 16 }}>
+        <div className="field">
+          <label htmlFor="cafe24_order_id_lookup">Cafe24 주문번호</label>
+          <input
+            id="cafe24_order_id_lookup"
+            name="cafe24_order_id"
+            placeholder="Cafe24 주문번호를 입력하세요. 예: 20260701-0000017"
+            defaultValue={lookup.query}
+          />
+        </div>
+        <button className="button" type="submit">Cafe24 주문 조회</button>
+      </form>
+
+      {lookup.message ? (
+        <div className="notice" style={{ marginTop: 16 }}>{lookup.message}</div>
+      ) : null}
+
+      {lookup.order ? (
+        <div style={{ marginTop: 16 }}>
+          <div className="grid grid-3">
+            <FileLookupField label="tokenLookupMallId" value={lookup.order.tokenLookupMallId} />
+            <FileLookupField label="order_id" value={lookup.order.orderId} />
+            <FileLookupField label="order_no" value={lookup.order.orderNo} />
+            <FileLookupField label="주문일" value={lookup.order.orderedAt} />
+            <FileLookupField label="주문 상태" value={lookup.order.orderStatus} />
+            <FileLookupField label="업로드 파일 ID 발견 수" value={lookup.order.uploadFileIds.length} />
+          </div>
+
+          <div className="notice" style={{ marginTop: 16 }}>
+            <h3 style={{ marginTop: 0 }}>업로드 파일 ID</h3>
+            {lookup.order.uploadFileIds.length ? (
+              <ul style={{ marginBottom: 0 }}>
+                {lookup.order.uploadFileIds.map((fileId) => (
+                  <li key={fileId}><CopyFileIdButton fileId={fileId} /></li>
+                ))}
+              </ul>
+            ) : (
+              <p style={{ marginBottom: 0 }}>주문 상품 옵션에서 업로드 파일 ID를 찾지 못했습니다.</p>
+            )}
+          </div>
+
+          <div style={{ marginTop: 18 }}>
+            <h3>상품/옵션 요약</h3>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>상품명</th>
+                    <th>상품번호</th>
+                    <th>variant_code</th>
+                    <th>상품 옵션</th>
+                    <th>업로드 파일 ID</th>
+                    <th>source</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lookup.order.items.length ? lookup.order.items.map((item, index) => (
+                    <tr key={`${item.productNo ?? "item"}-${index}`}>
+                      <td>{item.productName ?? "-"}</td>
+                      <td>{item.productNo ?? "-"}</td>
+                      <td>{item.variantCode ?? "-"}</td>
+                      <td>{item.optionText ?? "-"}</td>
+                      <td>
+                        {item.uploadFileIds.length ? item.uploadFileIds.map((fileId) => (
+                          <div key={fileId}><CopyFileIdButton fileId={fileId} /></div>
+                        )) : "-"}
+                      </td>
+                      <td>{item.uploadFileIdSources.join(", ") || "-"}</td>
+                    </tr>
+                  )) : (
+                    <tr>
+                      <td colSpan={6}>Cafe24 API 응답에서 상품 item 목록을 찾지 못했습니다.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="notice" style={{ marginTop: 16 }}>
+            <h3 style={{ marginTop: 0 }}>응답 구조 요약</h3>
+            <p>top-level keys: {lookup.order.responseShape.topLevelKeys.join(", ") || "-"}</p>
+            <p>order object: {lookup.order.responseShape.hasOrderObject ? "있음" : "없음"}</p>
+            <p>orders array: {lookup.order.responseShape.hasOrdersArray ? "있음" : "없음"}</p>
+            <p style={{ marginBottom: 0 }}>item count: {lookup.order.responseShape.itemCount}</p>
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function OrderLinkPanel({
   file,
   message
@@ -616,6 +762,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
 
   const fileIdQuery = readParam(searchParams, "file_id");
   const orderIdQuery = readParam(searchParams, "order_id");
+  const cafe24OrderIdQuery = readParam(searchParams, "cafe24_order_id");
   const recentStatusFilter = getRecentStatusFilter(readParam(searchParams, "recent_status"));
   const recentOrderLinkFilter = getRecentOrderLinkFilter(readParam(searchParams, "recent_order_link"));
   const downloadFileIdFilter = readParam(searchParams, "download_file_id").trim();
@@ -636,6 +783,8 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     hasFileIdParam(searchParams),
     orderIdQuery,
     hasOrderIdParam(searchParams),
+    cafe24OrderIdQuery,
+    hasCafe24OrderIdParam(searchParams),
     recentStatusFilter,
     recentOrderLinkFilter,
     downloadFileIdFilter,
@@ -699,6 +848,8 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
           <div className="card"><span>scopes</span><strong>{data.installation?.scopes ?? "-"}</strong></div>
         </div>
       </section>
+
+      <Cafe24OrderApiLookupPanel lookup={data.cafe24OrderLookup} />
 
       <section className="panel panel-pad">
         <h2>주문번호로 업로드 파일 찾기</h2>
