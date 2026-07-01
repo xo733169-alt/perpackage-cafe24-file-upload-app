@@ -59,13 +59,13 @@ function buildProofConfirmationMessage(input: {
   const lines = [
     "안녕하세요. 페르패키지입니다.",
     "",
-    "전달주신 인쇄 파일 기준으로 제작 전 교정 확인 안내드립니다.",
+    "전달해주신 인쇄 파일 기준으로 제작 전 교정 확인 안내드립니다.",
     "",
     `주문번호: ${input.orderId || "미연결"}`,
     `파일명: ${input.originalFilename}`,
     `업로드 파일 ID: ${input.fileId}`,
     "",
-    "아래 내용 확인 부탁드립니다.",
+    "아래 항목을 확인 부탁드립니다.",
     "",
     ...numberedItems
   ];
@@ -76,7 +76,7 @@ function buildProofConfirmationMessage(input: {
 
   lines.push(
     "",
-    '교정 내용 확인 후 "확인했습니다"라고 회신 주시면 이후 제작 진행 단계로 넘어가겠습니다.',
+    '교정 내용을 확인하신 뒤 "확인했습니다"라고 회신 주시면 이후 제작 진행 단계로 넘어가겠습니다.',
     "",
     "수정이 필요한 부분이 있다면 함께 말씀 부탁드립니다.",
     "",
@@ -124,7 +124,7 @@ export function ProofConfirmationMessagePanel({
         <span className="status">관리자 확인용</span>
       </div>
       <p>
-        제작 전 고객에게 전달할 교정확인 안내문을 생성합니다. 선택 항목과 메모는 화면에서만 반영되며 DB에는 저장하지 않습니다.
+        제작 전 고객에게 전달할 교정확인 안내문을 생성합니다. 선택 항목과 메모는 안내문에만 반영되며 DB에는 저장하지 않습니다.
       </p>
       <div className="field">
         <label>교정확인 항목</label>
