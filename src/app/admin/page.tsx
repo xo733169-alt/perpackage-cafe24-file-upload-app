@@ -6,6 +6,7 @@ import {
 } from "@/app/admin/actions";
 import { AdminFileStatusForm } from "@/components/AdminFileStatusForm";
 import { CopyFileIdButton } from "@/components/CopyFileIdButton";
+import { ProofConfirmationMessagePanel } from "@/components/ProofConfirmationMessagePanel";
 import { ReuploadRequestMessagePanel } from "@/components/ReuploadRequestMessagePanel";
 import { getAdminAuthConfigStatus, isAdminAuthenticated } from "@/lib/admin/auth";
 import { getCafe24ConfigStatus } from "@/lib/cafe24/config";
@@ -1428,6 +1429,11 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
             <AdminFileStatusForm fileId={data.fileLookup.file.id} currentStatus={data.fileLookup.file.status} />
             <ReuploadRequestMessagePanel
               currentStatus={data.fileLookup.file.status}
+              fileId={data.fileLookup.file.id}
+              orderId={data.fileLookup.file.order_id}
+              originalFilename={data.fileLookup.file.original_filename}
+            />
+            <ProofConfirmationMessagePanel
               fileId={data.fileLookup.file.id}
               orderId={data.fileLookup.file.order_id}
               originalFilename={data.fileLookup.file.original_filename}
