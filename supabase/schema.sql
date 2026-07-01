@@ -100,7 +100,7 @@ create table if not exists public.file_order_link_logs (
   previous_order_id text,
   new_order_id text not null,
   link_source text not null,
-  webhook_event_id uuid references public.cafe24_webhook_events(id) on delete set null,
+  webhook_event_id text references public.cafe24_webhook_events(id) on delete set null,
   admin_user text,
   memo text,
   created_at timestamptz not null default now(),
