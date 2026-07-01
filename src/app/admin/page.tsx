@@ -28,6 +28,11 @@ import {
   listFileStatusChangeLogs,
   type FileStatusChangeLogRecord
 } from "@/lib/files/file-review-log-service";
+import {
+  getFileOrderLinkSourceLabel,
+  listFileOrderLinkLogs,
+  type FileOrderLinkLogRecord
+} from "@/lib/files/order-link-log-service";
 import { FILE_STATUS_OPTIONS, getFileStatusLabel, isKnownFileStatus } from "@/lib/files/file-status";
 import {
   getFileById,
@@ -47,6 +52,7 @@ type FileLookupState = {
   file: UploadedFileRecord | null;
   downloadLogs: FileDownloadLogRecord[];
   statusLogs: FileStatusChangeLogRecord[];
+  orderLinkLogs: FileOrderLinkLogRecord[];
   message: string | null;
   status: "idle" | "found" | "not_found" | "empty" | "error";
 };
@@ -358,7 +364,7 @@ async function lookupFileById(rawFileId: string, shouldSearch: boolean): Promise
   const query = rawFileId.trim();
 
   if (!shouldSearch) {
-    return { query: "", file: null, downloadLogs: [], statusLogs: [], message: null, status: "idle" };
+    return { query: "", file: null, downloadLogs: [], statusLogs: [], orderLinkLogs: [], message: null, status: "idle" };
   }
 
   if (!query) {
@@ -367,6 +373,7 @@ async function lookupFileById(rawFileId: string, shouldSearch: boolean): Promise
       file: null,
       downloadLogs: [],
       statusLogs: [],
+      orderLinkLogs: [],
       message: "file_id를 입력해 주세요.",
       status: "empty"
     };
@@ -381,22 +388,25 @@ async function lookupFileById(rawFileId: string, shouldSearch: boolean): Promise
         file: null,
         downloadLogs: [],
         statusLogs: [],
+        orderLinkLogs: [],
         message: "해당 file_id의 업로드 파일을 찾지 못했습니다.",
         status: "not_found"
       };
     }
 
-    const [downloadLogs, statusLogs] = await Promise.all([
+    const [downloadLogs, statusLogs, orderLinkLogs] = await Promise.all([
       listFileDownloadLogs(file.id, 5),
-      listFileStatusChangeLogs(file.id, 10)
+      listFileStatusChangeLogs(file.id, 10),
+      listFileOrderLinkLogs(file.id, 5)
     ]);
-    return { query, file, downloadLogs, statusLogs, message: null, status: "found" };
+    return { query, file, downloadLogs, statusLogs, orderLinkLogs, message: null, status: "found" };
   } catch (error) {
     return {
       query,
       file: null,
       downloadLogs: [],
       statusLogs: [],
+      orderLinkLogs: [],
       message: error instanceof Error ? error.message : "파일 조회에 실패했습니다.",
       status: "error"
     };
@@ -814,6 +824,42 @@ function StatusChangeLogPanel({ logs }: { logs: FileStatusChangeLogRecord[] }) {
             )) : (
               <tr>
                 <td colSpan={5}>아직 상태 변경 이력이 없습니다.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function OrderLinkLogPanel({ logs }: { logs: FileOrderLinkLogRecord[] }) {
+  return (
+    <div style={{ marginTop: 18 }}>
+      <h3>주문번호 연결 이력</h3>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>연결일시</th>
+              <th>이전 주문번호</th>
+              <th>새 주문번호</th>
+              <th>연결 방식</th>
+              <th>메모</th>
+            </tr>
+          </thead>
+          <tbody>
+            {logs.length ? logs.map((log) => (
+              <tr key={log.id}>
+                <td>{log.created_at}</td>
+                <td>{log.previous_order_id ?? "미연결"}</td>
+                <td>{log.new_order_id}</td>
+                <td><span className="status">{getFileOrderLinkSourceLabel(log.link_source)}</span></td>
+                <td>{log.memo ?? "-"}</td>
+              </tr>
+            )) : (
+              <tr>
+                <td colSpan={5}>아직 주문번호 연결 이력이 없습니다.</td>
               </tr>
             )}
           </tbody>
@@ -1320,6 +1366,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
               <FileLookupField label="updated_at" value={data.fileLookup.file.updated_at} />
             </div>
             <OrderLinkPanel file={data.fileLookup.file} message={orderLinkMessage} />
+            <OrderLinkLogPanel logs={data.fileLookup.orderLinkLogs} />
             <AdminFileStatusForm fileId={data.fileLookup.file.id} currentStatus={data.fileLookup.file.status} />
             <StatusChangeLogPanel logs={data.fileLookup.statusLogs} />
             <DownloadPanel file={data.fileLookup.file} />

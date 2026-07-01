@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import {
   clearAdminSessionCookie,
   getAdminAuthConfigStatus,
@@ -9,6 +10,17 @@ import {
   verifyAdminPassword
 } from "@/lib/admin/auth";
 import { getFileById, updateFileOrderId } from "@/lib/files/file-service";
+import { createFileOrderLinkLog } from "@/lib/files/order-link-log-service";
+
+function getAdminRequestLogContext() {
+  const headerStore = headers();
+  const forwardedFor = headerStore.get("x-forwarded-for");
+
+  return {
+    ipAddress: forwardedFor?.split(",")[0]?.trim() || headerStore.get("x-real-ip") || null,
+    userAgent: headerStore.get("user-agent")
+  };
+}
 
 export async function loginAdminAction(formData: FormData) {
   const status = getAdminAuthConfigStatus();
@@ -48,7 +60,23 @@ export async function linkFileOrderIdAction(formData: FormData) {
   }
 
   try {
+    const previousFile = await getFileById(fileId);
+    const previousOrderId = previousFile?.order_id?.trim() || null;
     await updateFileOrderId({ fileId, orderId });
+
+    if (previousOrderId !== orderId) {
+      const context = getAdminRequestLogContext();
+      await createFileOrderLinkLog({
+        fileId,
+        previousOrderId,
+        newOrderId: orderId,
+        linkSource: "manual",
+        adminUser: "admin",
+        memo: "관리자 file_id 검색 화면에서 주문번호 수동 연결",
+        ipAddress: context.ipAddress,
+        userAgent: context.userAgent
+      });
+    }
   } catch (error) {
     const reason = error instanceof Error && error.message === "Uploaded file was not found."
       ? "file_not_found"
@@ -97,6 +125,17 @@ export async function linkCafe24LookupFileOrderIdAction(formData: FormData) {
         linkStatus = "different_order";
       } else {
         await updateFileOrderId({ fileId, orderId });
+        const context = getAdminRequestLogContext();
+        await createFileOrderLinkLog({
+          fileId,
+          previousOrderId: null,
+          newOrderId: orderId,
+          linkSource: "cafe24_order_lookup",
+          adminUser: "admin",
+          memo: "Cafe24 주문 조회 결과에서 업로드 파일 ID 확인 후 주문번호 연결",
+          ipAddress: context.ipAddress,
+          userAgent: context.userAgent
+        });
       }
     }
   } catch (error) {

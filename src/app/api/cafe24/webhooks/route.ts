@@ -12,6 +12,7 @@ import {
   updateCafe24WebhookEventProcessing
 } from "@/lib/cafe24/webhook-events";
 import { getFileById, updateFileOrderId } from "@/lib/files/file-service";
+import { createFileOrderLinkLog } from "@/lib/files/order-link-log-service";
 
 export const dynamic = "force-dynamic";
 
@@ -94,6 +95,15 @@ async function processWebhookAutoLink(event: Cafe24WebhookEventRecord): Promise<
       const currentOrderId = file.order_id?.trim() ?? "";
       if (!currentOrderId) {
         await updateFileOrderId({ fileId, orderId });
+        await createFileOrderLinkLog({
+          fileId,
+          previousOrderId: null,
+          newOrderId: orderId,
+          linkSource: "webhook",
+          webhookEventId: event.id,
+          adminUser: "system",
+          memo: "Cafe24 Webhook order.received 자동 연결"
+        });
         result.linkedCount += 1;
         continue;
       }

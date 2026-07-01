@@ -94,6 +94,27 @@ create index if not exists cafe24_webhook_events_received_at_idx on public.cafe2
 create index if not exists cafe24_webhook_events_order_id_idx on public.cafe24_webhook_events (order_id);
 create index if not exists cafe24_webhook_events_event_type_idx on public.cafe24_webhook_events (event_type);
 
+create table if not exists public.file_order_link_logs (
+  id uuid primary key default gen_random_uuid(),
+  file_id uuid not null references public.files(id) on delete cascade,
+  previous_order_id text,
+  new_order_id text not null,
+  link_source text not null,
+  webhook_event_id uuid references public.cafe24_webhook_events(id) on delete set null,
+  admin_user text,
+  memo text,
+  created_at timestamptz not null default now(),
+  ip_address text,
+  user_agent text,
+  constraint file_order_link_logs_link_source_check
+    check (link_source in ('manual', 'cafe24_order_lookup', 'webhook'))
+);
+
+create index if not exists file_order_link_logs_file_id_idx on public.file_order_link_logs (file_id);
+create index if not exists file_order_link_logs_new_order_id_idx on public.file_order_link_logs (new_order_id);
+create index if not exists file_order_link_logs_link_source_idx on public.file_order_link_logs (link_source);
+create index if not exists file_order_link_logs_created_at_idx on public.file_order_link_logs (created_at desc);
+
 -- Phase 1 note:
 -- Tokens are separated in cafe24_installations for future encryption.
 -- Before production, replace plain token columns with encrypted values or
