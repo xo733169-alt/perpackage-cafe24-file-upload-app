@@ -1,5 +1,5 @@
 import { getCafe24ApiBaseUrl, requireCafe24Config } from "./config";
-import { getValidCafe24AccessToken } from "./token-store";
+import { getCafe24Installation, getValidCafe24AccessToken } from "./token-store";
 
 const UUID_PATTERN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi;
 const FILE_ID_KEYWORDS = ["업로드 파일 ID", "파일 ID", "file_id", "파일접수번호"];
@@ -10,6 +10,7 @@ export type Cafe24OrderLookupItem = {
   productNo: string | null;
   variantCode: string | null;
   optionText: string | null;
+  additionalOptionText: string | null;
   uploadFileIds: string[];
   uploadFileIdSources: string[];
 };
@@ -23,11 +24,22 @@ export type Cafe24OrderLookupSummary = {
   items: Cafe24OrderLookupItem[];
   uploadFileIds: string[];
   responseShape: {
-    topLevelKeys: string[];
+    detailTopLevelKeys: string[];
+    itemResponseTopLevelKeys: string[];
     hasOrderObject: boolean;
     hasOrdersArray: boolean;
+    detailItemCount: number;
+    itemArrayExists: boolean;
     itemCount: number;
+    itemLookupStatus: "success" | "failed" | "not_attempted";
+    itemLookupErrorMessage: string | null;
   };
+};
+
+type ItemLookupResult = {
+  status: "success" | "failed" | "not_attempted";
+  payload: unknown | null;
+  errorMessage: string | null;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -45,6 +57,7 @@ function firstString(record: Record<string, unknown>, keys: string[]) {
     const value = asString(record[key]);
     if (value) return value;
   }
+
   return null;
 }
 
@@ -58,11 +71,34 @@ function getOrderObject(payload: unknown): Record<string, unknown> | null {
 function getOrderItems(order: Record<string, unknown> | null): Record<string, unknown>[] {
   if (!order) return [];
   const candidates = [order.items, order.order_items, order.products];
+
   for (const candidate of candidates) {
     if (Array.isArray(candidate)) {
       return candidate.filter(isRecord);
     }
   }
+
+  return [];
+}
+
+function getItemResponseItems(payload: unknown): Record<string, unknown>[] {
+  if (!isRecord(payload)) return [];
+
+  const candidates = [
+    payload.items,
+    payload.order_items,
+    payload.products,
+    isRecord(payload.order) ? payload.order.items : null,
+    isRecord(payload.order) ? payload.order.order_items : null,
+    isRecord(payload.order) ? payload.order.products : null
+  ];
+
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) {
+      return candidate.filter(isRecord);
+    }
+  }
+
   return [];
 }
 
@@ -87,6 +123,31 @@ function collectStrings(value: unknown, path: string, output: Array<{ path: stri
       }
     }
   }
+}
+
+function collectOptionRelatedStrings(item: Record<string, unknown>, itemPath: string) {
+  const output: Array<{ path: string; key: string; value: string }> = [];
+  const optionKeys = [
+    "option",
+    "options",
+    "option_value",
+    "additional_option",
+    "additional_options",
+    "input_options",
+    "product_option",
+    "product_options",
+    "variants",
+    "custom_fields",
+    "additional_info"
+  ];
+
+  optionKeys.forEach((key) => {
+    if (key in item) {
+      collectStrings(item[key], `${itemPath}.${key}`, output);
+    }
+  });
+
+  return output;
 }
 
 function extractUploadFileIdsFromItem(item: Record<string, unknown>, itemPath: string) {
@@ -115,33 +176,73 @@ function extractUploadFileIdsFromItem(item: Record<string, unknown>, itemPath: s
   };
 }
 
-function summarizeOptionText(item: Record<string, unknown>) {
+function summarizeOptionText(item: Record<string, unknown>, itemPath: string) {
   const direct = firstString(item, [
     "option_value",
     "option",
-    "options",
     "product_option",
     "product_options",
     "variant_code"
   ]);
   if (direct) return direct;
 
-  const strings: Array<{ path: string; key: string; value: string }> = [];
-  collectStrings(item.options ?? item.additional_options ?? item.input_options ?? item.product_options, "item.options", strings);
+  const strings = collectOptionRelatedStrings(item, itemPath);
   return strings.slice(0, 6).map((entry) => entry.value).filter(Boolean).join(" / ") || null;
 }
 
-export function summarizeCafe24OrderLookup(payload: unknown, tokenLookupMallId: string): Cafe24OrderLookupSummary {
-  const payloadRecord = isRecord(payload) ? payload : {};
-  const order = getOrderObject(payload);
-  const items = getOrderItems(order);
-  const summarizedItems = items.map((item, index) => {
-    const uploadInfo = extractUploadFileIdsFromItem(item, `order.items[${index}]`);
+function summarizeAdditionalOptionText(item: Record<string, unknown>, itemPath: string) {
+  const strings: Array<{ path: string; key: string; value: string }> = [];
+  [
+    "additional_option",
+    "additional_options",
+    "input_options",
+    "custom_fields",
+    "additional_info"
+  ].forEach((key) => {
+    if (key in item) collectStrings(item[key], `${itemPath}.${key}`, strings);
+  });
+
+  return strings.slice(0, 8).map((entry) => entry.value).filter(Boolean).join(" / ") || null;
+}
+
+export function summarizeCafe24OrderLookup({
+  detailPayload,
+  itemPayload,
+  itemLookupStatus,
+  itemLookupErrorMessage,
+  tokenLookupMallId
+}: {
+  detailPayload: unknown;
+  itemPayload: unknown | null;
+  itemLookupStatus: "success" | "failed" | "not_attempted";
+  itemLookupErrorMessage: string | null;
+  tokenLookupMallId: string;
+}): Cafe24OrderLookupSummary {
+  const detailRecord = isRecord(detailPayload) ? detailPayload : {};
+  const itemRecord = isRecord(itemPayload) ? itemPayload : {};
+  const order = getOrderObject(detailPayload);
+  const detailItems = getOrderItems(order);
+  const itemResponseItems = getItemResponseItems(itemPayload);
+  const sourceItems = itemResponseItems.length ? itemResponseItems : detailItems;
+  const sourcePathPrefix = itemResponseItems.length ? "orderItemResponse.items" : "order.items";
+  const summarizedItems = sourceItems.map((item, index) => {
+    const itemPath = `${sourcePathPrefix}[${index}]`;
+    const uploadInfo = extractUploadFileIdsFromItem(item, itemPath);
+
     return {
-      productName: firstString(item, ["product_name", "product_name_default", "productName", "productNameDefault", "item_name", "itemName", "product_name_en"]),
+      productName: firstString(item, [
+        "product_name",
+        "product_name_default",
+        "productName",
+        "productNameDefault",
+        "item_name",
+        "itemName",
+        "product_name_en"
+      ]),
       productNo: firstString(item, ["product_no", "productNo"]),
       variantCode: firstString(item, ["variant_code", "variantCode"]),
-      optionText: summarizeOptionText(item),
+      optionText: summarizeOptionText(item, itemPath),
+      additionalOptionText: summarizeAdditionalOptionText(item, itemPath),
       uploadFileIds: uploadInfo.uploadFileIds,
       uploadFileIdSources: uploadInfo.uploadFileIdSources
     };
@@ -157,12 +258,34 @@ export function summarizeCafe24OrderLookup(payload: unknown, tokenLookupMallId: 
     items: summarizedItems,
     uploadFileIds,
     responseShape: {
-      topLevelKeys: Object.keys(payloadRecord).sort(),
-      hasOrderObject: isRecord(payloadRecord.order),
-      hasOrdersArray: Array.isArray(payloadRecord.orders),
-      itemCount: items.length
+      detailTopLevelKeys: Object.keys(detailRecord).sort(),
+      itemResponseTopLevelKeys: Object.keys(itemRecord).sort(),
+      hasOrderObject: isRecord(detailRecord.order),
+      hasOrdersArray: Array.isArray(detailRecord.orders),
+      detailItemCount: detailItems.length,
+      itemArrayExists: itemResponseItems.length > 0,
+      itemCount: sourceItems.length,
+      itemLookupStatus,
+      itemLookupErrorMessage
     }
   };
+}
+
+async function fetchCafe24Json(endpoint: string, accessToken: string, apiVersion: string) {
+  const response = await fetch(endpoint, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+      "X-Cafe24-Api-Version": apiVersion
+    },
+    cache: "no-store"
+  });
+
+  if (!response.ok) {
+    throw new Error(`Cafe24 request failed with status ${response.status}.`);
+  }
+
+  return response.json() as Promise<unknown>;
 }
 
 export async function fetchCafe24OrderLookup(orderId: string, mallId?: string | null) {
@@ -174,20 +297,40 @@ export async function fetchCafe24OrderLookup(orderId: string, mallId?: string | 
   const config = requireCafe24Config();
   const tokenLookupMallId = mallId?.trim() || config.mallId;
   const accessToken = await getValidCafe24AccessToken(tokenLookupMallId);
-  const endpoint = `${getCafe24ApiBaseUrl(tokenLookupMallId)}/api/v2/admin/orders/${encodeURIComponent(trimmedOrderId)}`;
-  const response = await fetch(endpoint, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-      "X-Cafe24-Api-Version": config.apiVersion
-    },
-    cache: "no-store"
-  });
+  const apiBaseUrl = getCafe24ApiBaseUrl(tokenLookupMallId);
+  const detailEndpoint = `${apiBaseUrl}/api/v2/admin/orders/${encodeURIComponent(trimmedOrderId)}`;
+  const detailPayload = await fetchCafe24Json(detailEndpoint, accessToken, config.apiVersion);
+  let itemLookup: ItemLookupResult = {
+    status: "not_attempted",
+    payload: null,
+    errorMessage: null
+  };
 
-  if (!response.ok) {
-    throw new Error(`Cafe24 order lookup failed with status ${response.status}.`);
+  try {
+    const installation = await getCafe24Installation(tokenLookupMallId);
+    const itemUrl = new URL(`${apiBaseUrl}/api/v2/admin/orders/${encodeURIComponent(trimmedOrderId)}/items`);
+    if (installation?.shop_no) {
+      itemUrl.searchParams.set("shop_no", installation.shop_no);
+    }
+
+    itemLookup = {
+      status: "success",
+      payload: await fetchCafe24Json(itemUrl.toString(), accessToken, config.apiVersion),
+      errorMessage: null
+    };
+  } catch (error) {
+    itemLookup = {
+      status: "failed",
+      payload: null,
+      errorMessage: error instanceof Error ? error.message : "Cafe24 order item lookup failed."
+    };
   }
 
-  const payload = await response.json() as unknown;
-  return summarizeCafe24OrderLookup(payload, tokenLookupMallId);
+  return summarizeCafe24OrderLookup({
+    detailPayload,
+    itemPayload: itemLookup.payload,
+    itemLookupStatus: itemLookup.status,
+    itemLookupErrorMessage: itemLookup.errorMessage,
+    tokenLookupMallId
+  });
 }

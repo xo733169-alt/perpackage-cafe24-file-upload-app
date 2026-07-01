@@ -594,6 +594,7 @@ function Cafe24OrderApiLookupPanel({ lookup }: { lookup: Cafe24OrderApiLookupSta
                     <th>상품번호</th>
                     <th>variant_code</th>
                     <th>상품 옵션</th>
+                    <th>추가 입력 옵션</th>
                     <th>업로드 파일 ID</th>
                     <th>source</th>
                   </tr>
@@ -605,6 +606,7 @@ function Cafe24OrderApiLookupPanel({ lookup }: { lookup: Cafe24OrderApiLookupSta
                       <td>{item.productNo ?? "-"}</td>
                       <td>{item.variantCode ?? "-"}</td>
                       <td>{item.optionText ?? "-"}</td>
+                      <td>{item.additionalOptionText ?? "-"}</td>
                       <td>
                         {item.uploadFileIds.length ? item.uploadFileIds.map((fileId) => (
                           <div key={fileId}><CopyFileIdButton fileId={fileId} /></div>
@@ -614,7 +616,7 @@ function Cafe24OrderApiLookupPanel({ lookup }: { lookup: Cafe24OrderApiLookupSta
                     </tr>
                   )) : (
                     <tr>
-                      <td colSpan={6}>Cafe24 API 응답에서 상품 item 목록을 찾지 못했습니다.</td>
+                      <td colSpan={7}>Cafe24 API 응답에서 상품 item 목록을 찾지 못했습니다.</td>
                     </tr>
                   )}
                 </tbody>
@@ -624,10 +626,17 @@ function Cafe24OrderApiLookupPanel({ lookup }: { lookup: Cafe24OrderApiLookupSta
 
           <div className="notice" style={{ marginTop: 16 }}>
             <h3 style={{ marginTop: 0 }}>응답 구조 요약</h3>
-            <p>top-level keys: {lookup.order.responseShape.topLevelKeys.join(", ") || "-"}</p>
+            <p>order detail top-level keys: {lookup.order.responseShape.detailTopLevelKeys.join(", ") || "-"}</p>
+            <p>order item response top-level keys: {lookup.order.responseShape.itemResponseTopLevelKeys.join(", ") || "-"}</p>
             <p>order object: {lookup.order.responseShape.hasOrderObject ? "있음" : "없음"}</p>
             <p>orders array: {lookup.order.responseShape.hasOrdersArray ? "있음" : "없음"}</p>
-            <p style={{ marginBottom: 0 }}>item count: {lookup.order.responseShape.itemCount}</p>
+            <p>order detail item count: {lookup.order.responseShape.detailItemCount}</p>
+            <p>order item array: {lookup.order.responseShape.itemArrayExists ? "있음" : "없음"}</p>
+            <p>order item count: {lookup.order.responseShape.itemCount}</p>
+            <p>item lookup status: {lookup.order.responseShape.itemLookupStatus}</p>
+            <p style={{ marginBottom: 0 }}>
+              item lookup error: {lookup.order.responseShape.itemLookupErrorMessage ?? "-"}
+            </p>
           </div>
         </div>
       ) : null}
