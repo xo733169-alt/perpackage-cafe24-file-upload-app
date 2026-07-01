@@ -13,6 +13,7 @@ import { getCafe24Installation } from "@/lib/cafe24/token-store";
 import {
   listRecentCafe24WebhookEvents,
   summarizeCafe24WebhookPayload,
+  type Cafe24WebhookProcessedStatus,
   type Cafe24WebhookEventRecord
 } from "@/lib/cafe24/webhook-events";
 import {
@@ -193,6 +194,53 @@ function shortenUserAgent(userAgent: string | null) {
   }
 
   return userAgent.length > 90 ? `${userAgent.slice(0, 90)}...` : userAgent;
+}
+
+const WEBHOOK_STATUS_LABELS: Record<Cafe24WebhookProcessedStatus, string> = {
+  received: "수신됨",
+  auto_linked: "자동 연결 완료",
+  already_linked: "이미 연결됨",
+  no_order_id: "주문번호 없음",
+  no_file_id: "업로드 파일 ID 없음",
+  file_not_found: "업로드 파일 없음",
+  conflict_order_id: "다른 주문번호 연결됨",
+  failed: "처리 실패"
+};
+
+const WEBHOOK_WARNING_STATUSES = new Set<Cafe24WebhookProcessedStatus>([
+  "no_order_id",
+  "no_file_id",
+  "file_not_found",
+  "conflict_order_id",
+  "failed"
+]);
+
+const WEBHOOK_EVENT_TYPE_LABELS: Record<string, string> = {
+  "order.received": "주문 접수",
+  "order.updated": "주문 상태 변경",
+  "order.created": "주문 생성",
+  "deployment.check": "배포 확인",
+  unknown: "알 수 없음"
+};
+
+function getWebhookStatusLabel(status: string) {
+  return WEBHOOK_STATUS_LABELS[status as Cafe24WebhookProcessedStatus] ?? status;
+}
+
+function getWebhookStatusClassName(status: string) {
+  if (WEBHOOK_WARNING_STATUSES.has(status as Cafe24WebhookProcessedStatus)) {
+    return "status status-warning";
+  }
+
+  if (status === "auto_linked" || status === "already_linked") {
+    return "status status-success";
+  }
+
+  return "status";
+}
+
+function getWebhookEventTypeLabel(eventType: string) {
+  return WEBHOOK_EVENT_TYPE_LABELS[eventType] ?? eventType;
 }
 
 function getOrderLinkMessage(status: string) {
@@ -555,23 +603,28 @@ function Cafe24WebhookEventsPanel({ events }: { events: Cafe24WebhookEventRecord
           <thead>
             <tr>
               <th>수신일시</th>
-              <th>event_type</th>
+              <th>이벤트</th>
               <th>order_id</th>
-              <th>processed_status</th>
-              <th>error_message</th>
+              <th>처리 상태</th>
+              <th>처리 메시지</th>
               <th>payload 요약</th>
             </tr>
           </thead>
           <tbody>
             {events.length ? events.map((event) => {
               const summary = summarizeCafe24WebhookPayload(event.payload);
+              const eventType = event.event_type || summary.eventType;
               return (
                 <tr key={event.id}>
                   <td>{event.received_at}</td>
-                  <td><span className="status">{event.event_type || summary.eventType}</span></td>
+                  <td><span className="status">{getWebhookEventTypeLabel(eventType)}</span></td>
                   <td>{event.order_id ?? summary.orderId ?? "-"}</td>
-                  <td>{event.processed_status}</td>
-                  <td>{event.error_message ?? "-"}</td>
+                  <td>
+                    <span className={getWebhookStatusClassName(event.processed_status)}>
+                      {getWebhookStatusLabel(event.processed_status)}
+                    </span>
+                  </td>
+                  <td className="webhook-error-message">{event.error_message ?? "-"}</td>
                   <td>
                     <div>top-level keys: {summary.topLevelKeys.join(", ") || "-"}</div>
                     <div>mall_id: {event.mall_id ?? summary.mallId ?? "-"}</div>

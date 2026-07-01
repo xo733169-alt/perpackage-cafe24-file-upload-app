@@ -283,6 +283,23 @@ th {
   font-weight: 900;
 }
 
+.status-success {
+  background: #e8f7ef;
+  color: #17643a;
+}
+
+.status-warning {
+  background: #fff1e8;
+  color: #9a3412;
+}
+
+.webhook-error-message {
+  max-width: 320px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .notice {
   padding: 14px;
   border: 1px solid #f0d8a8;
