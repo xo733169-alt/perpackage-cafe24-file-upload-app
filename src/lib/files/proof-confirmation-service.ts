@@ -192,7 +192,7 @@ export async function listProofConfirmations(
   const proofStatus = getProofStatusFilter(input.proofStatus ?? "all");
   const fileId = sanitizeText(input.fileId, 120);
   const orderId = sanitizeText(input.orderId, 120);
-  const limit = Math.max(1, Math.min(input.limit ?? 10, 50));
+  const limit = Math.max(1, Math.min(input.limit ?? 10, 1000));
   const fetchLimit = fileId ? Math.max(limit, 100) : limit;
 
   const supabase = getSupabaseAdmin();

@@ -217,6 +217,33 @@ function buildDownloadLogExportHref({
   return `/api/admin/download-logs/export${query ? `?${query}` : ""}`;
 }
 
+function buildProofConfirmationLogExportHref({
+  proofStatus,
+  fileId,
+  orderId
+}: {
+  proofStatus: ProofConfirmationStatusFilter;
+  fileId: string;
+  orderId: string;
+}) {
+  const params = new URLSearchParams();
+
+  if (proofStatus !== "all") {
+    params.set("proof_status", proofStatus);
+  }
+
+  if (fileId) {
+    params.set("proof_file_id", fileId);
+  }
+
+  if (orderId) {
+    params.set("proof_order_id", orderId);
+  }
+
+  const query = params.toString();
+  return `/api/admin/proof-confirmations/export${query ? `?${query}` : ""}`;
+}
+
 function shortenUserAgent(userAgent: string | null) {
   if (!userAgent) {
     return "-";
@@ -1108,12 +1135,14 @@ function AdminProofConfirmationLogPanel({
   proofStatus,
   proofFileId,
   proofOrderId,
+  exportHref,
   preservedQuery
 }: {
   logs: ProofConfirmationRecord[];
   proofStatus: ProofConfirmationStatusFilter;
   proofFileId: string;
   proofOrderId: string;
+  exportHref: string;
   preservedQuery: AdminPreservedQuery;
 }) {
   const resetHref = buildAdminHrefFromPreservedQuery({
@@ -1168,6 +1197,7 @@ function AdminProofConfirmationLogPanel({
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button className="button" type="submit">필터 적용</button>
           <a className="button secondary" href={resetHref}>초기화</a>
+          <a className="button secondary" href={exportHref}>CSV 다운로드</a>
         </div>
       </form>
 
@@ -1638,6 +1668,11 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     startDate: downloadStartDateFilter,
     endDate: downloadEndDateFilter
   });
+  const proofConfirmationLogsExportHref = buildProofConfirmationLogExportHref({
+    proofStatus: proofStatusFilter,
+    fileId: proofFileIdFilter,
+    orderId: proofOrderIdFilter
+  });
   const orderLinkMessage = getOrderLinkMessage(readParam(searchParams, "order_link"));
   const cafe24AutoLinkMessage = getCafe24AutoLinkMessage(readParam(searchParams, "cafe24_link"));
   const proofActionMessage = getProofActionMessage(readParam(searchParams, "proof_action"));
@@ -1729,6 +1764,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
         proofStatus={proofStatusFilter}
         proofFileId={proofFileIdFilter}
         proofOrderId={proofOrderIdFilter}
+        exportHref={proofConfirmationLogsExportHref}
         preservedQuery={preservedQuery}
       />
 
