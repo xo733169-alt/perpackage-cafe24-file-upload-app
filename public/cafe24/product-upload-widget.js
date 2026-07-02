@@ -95,6 +95,8 @@
       "#app-perpackage-product-upload .ppu-checklist li:before{content:'✓';position:absolute;left:0;top:0;color:#2A408C;font-weight:700}",
       "#app-perpackage-product-upload .ppu-form{display:grid;gap:10px;margin-top:12px}",
       "#app-perpackage-product-upload .ppu-file-help{margin:0;font-size:12px;line-height:1.55;color:#5b6680}",
+      "#app-perpackage-product-upload .ppu-static-note{margin:10px 0 0;padding:10px 12px;border:1px solid #dbe5f5;border-radius:8px;background:#f7faff;font-size:12px;line-height:1.6;color:#4b5875}",
+      "#app-perpackage-product-upload .ppu-static-note strong{color:#2A408C;font-weight:700}",
       "#app-perpackage-product-upload .ppu-file-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center}",
       "#app-perpackage-product-upload .ppu-file{width:100%;min-width:0;padding:10px;border:1px solid #cfd8ea;border-radius:6px;background:#fff;font-size:13px;color:#1f2a44}",
       "#app-perpackage-product-upload .ppu-button{width:100%;min-width:128px;max-width:180px;padding:10px 14px;border:0;border-radius:6px;background:#2A408C;color:#fff;font-size:14px;font-weight:700;cursor:pointer;white-space:nowrap}",
@@ -103,6 +105,7 @@
       "#app-perpackage-product-upload .ppu-result{margin:10px 0 0;padding:10px;border-radius:6px;background:#fff;border:1px solid #d9e2f2;font-size:13px;line-height:1.6}",
       "#app-perpackage-product-upload .ppu-result-title{display:block;margin-bottom:4px;color:#15213b;font-weight:700}",
       "#app-perpackage-product-upload .ppu-tracking{display:block;margin-top:4px;font-size:12px;color:#6b7280;word-break:break-all}",
+      "#app-perpackage-product-upload .ppu-file-id-warning{margin-top:8px;padding:9px 10px;border:1px solid #f3c969;border-radius:6px;background:#fff9e8;color:#8a5a00;font-size:12px;line-height:1.55}",
       "#app-perpackage-product-upload .ppu-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}",
       "#app-perpackage-product-upload .ppu-action{padding:8px 10px;border:1px solid #b8c4dd;border-radius:6px;background:#fff;color:#1f2a44;font-size:12px;font-weight:700;cursor:pointer}",
       "#app-perpackage-product-upload .ppu-action:hover{border-color:#2A408C;color:#2A408C}",
@@ -387,8 +390,111 @@
 
     return {
       status: "success",
-      source: match.source
+      source: match.source,
+      element: match.element
     };
+  }
+
+  function getSelectedFileCount(fileInput) {
+    return fileInput && fileInput.files ? fileInput.files.length : 0;
+  }
+
+  function getMultipleFilesMessage() {
+    return "파일은 1개만 업로드 가능합니다. 여러 파일을 전달해야 하는 경우 AI, PDF, 이미지, 칼선 파일 등을 하나의 ZIP 파일로 압축해 업로드해 주세요.";
+  }
+
+  function getFileIdChangedMessage() {
+    return "업로드 파일 ID가 변경되었거나 비어 있습니다. 파일 확인 및 주문 연결을 위해 업로드 완료 후 생성된 업로드 파일 ID는 수정하지 말아 주세요. 다시 파일을 업로드하거나 새로고침 후 다시 진행해 주세요.";
+  }
+
+  function makeFileIdInputReadonly(match, fileId) {
+    if (!match || !match.element || !fileId) return;
+
+    match.element.readOnly = true;
+    match.element.setAttribute("readonly", "readonly");
+    match.element.setAttribute("aria-readonly", "true");
+    match.element.setAttribute("data-perpackage-file-id", fileId);
+    match.element.title = "업로드 파일 ID는 파일 확인 및 주문 연결용 값입니다. 수정하지 말아 주세요.";
+  }
+
+  function releaseFileIdInput(match) {
+    if (!match || !match.element) return;
+
+    match.element.readOnly = false;
+    match.element.removeAttribute("readonly");
+    match.element.removeAttribute("aria-readonly");
+    match.element.removeAttribute("data-perpackage-file-id");
+  }
+
+  function getCurrentFileIdValue(uploadState) {
+    var element = uploadState && uploadState.fileIdInputMatch && uploadState.fileIdInputMatch.element;
+    if (!element) return "";
+    return String(element.value || "").trim();
+  }
+
+  function isFileIdInputValid(uploadState) {
+    if (!uploadState || !uploadState.fileId) return true;
+    return getCurrentFileIdValue(uploadState) === String(uploadState.fileId).trim();
+  }
+
+  function showFileIdChangedWarning(status, result) {
+    status.className = "ppu-status ppu-warning";
+    status.textContent = getFileIdChangedMessage();
+
+    if (result && !result.hidden) {
+      var existingWarning = result.querySelector(".ppu-file-id-warning");
+      if (!existingWarning) {
+        existingWarning = document.createElement("div");
+        existingWarning.className = "ppu-file-id-warning";
+        result.appendChild(existingWarning);
+      }
+      existingWarning.textContent = getFileIdChangedMessage();
+    }
+  }
+
+  function watchFileIdInput(uploadState, status, result) {
+    var element = uploadState && uploadState.fileIdInputMatch && uploadState.fileIdInputMatch.element;
+    if (!element || element.getAttribute("data-perpackage-watch") === "1") return;
+
+    element.setAttribute("data-perpackage-watch", "1");
+
+    var validate = function () {
+      var expectedFileId = String(element.getAttribute("data-perpackage-file-id") || "").trim();
+      var currentFileId = String(element.value || "").trim();
+
+      if (expectedFileId && currentFileId !== expectedFileId) {
+        showFileIdChangedWarning(status, result);
+      }
+    };
+
+    element.addEventListener("input", validate);
+    element.addEventListener("change", validate);
+    element.addEventListener("blur", validate);
+  }
+
+  function looksLikeOrderAction(element) {
+    if (!element) return false;
+
+    var text = [
+      element.textContent,
+      element.value,
+      element.getAttribute && element.getAttribute("href"),
+      element.getAttribute && element.getAttribute("onclick"),
+      element.getAttribute && element.getAttribute("class"),
+      element.getAttribute && element.getAttribute("id"),
+      element.getAttribute && element.getAttribute("name")
+    ].join(" ");
+    var normalized = normalizeSearchText(text);
+
+    return (
+      normalized.indexOf("구매") !== -1 ||
+      normalized.indexOf("주문") !== -1 ||
+      normalized.indexOf("장바구니") !== -1 ||
+      normalized.indexOf("buy") !== -1 ||
+      normalized.indexOf("order") !== -1 ||
+      normalized.indexOf("basket") !== -1 ||
+      normalized.indexOf("cart") !== -1
+    );
   }
 
   function renderUploadResult(result, uploaded, fileId, cafe24InputResult) {
@@ -486,6 +592,9 @@
       }
 
       if (action === "reset-upload") {
+        if (currentUpload && currentUpload.fileIdInputMatch) {
+          releaseFileIdInput(currentUpload.fileIdInputMatch);
+        }
         currentUpload = null;
         form.reset();
         fileInput.value = "";
@@ -511,7 +620,9 @@
         return;
       }
 
-      var fileIdInputMatch = findFileIdInput();
+      var fileIdInputMatch = currentUpload && currentUpload.fileIdInputMatch
+        ? currentUpload.fileIdInputMatch
+        : findFileIdInput();
       if (!fileIdInputMatch || !fileIdInputMatch.element) {
         status.className = "ppu-status ppu-warning";
         status.textContent = "먼저 상품 옵션을 선택해 주세요. 옵션 선택 후 파일 업로드를 진행할 수 있습니다.";
@@ -618,6 +729,12 @@
       '<li>여러 파일은 ZIP으로 압축</li>',
       "</ul>",
       "</div>",
+      '<div class="ppu-static-note">',
+      '<strong>업로드 안내</strong><br>',
+      '인쇄용 파일은 1개만 업로드할 수 있습니다.<br>',
+      '여러 파일을 전달해야 하는 경우 AI, PDF, 이미지, 칼선 파일 등을 하나의 ZIP 파일로 압축해 업로드해 주세요.<br>',
+      '업로드 완료 후 생성되는 업로드 파일 ID는 파일 확인을 위한 값입니다. 주문 과정에서 해당 값을 수정하지 말아 주세요.',
+      "</div>",
       '<form class="ppu-form">',
       '<p class="ppu-file-help">파일을 선택한 뒤 업로드 버튼을 눌러주세요.</p>',
       '<p class="ppu-file-help">파일명에는 업체명 또는 상품명을 포함해 주시면 확인이 더 쉽습니다.</p>',
@@ -644,6 +761,8 @@
     var appOrigin = getAppOrigin();
     var currentUpload = null;
 
+    fileInput.removeAttribute("multiple");
+
     result.addEventListener("click", function (event) {
       var actionButton = event.target && event.target.closest && event.target.closest("[data-ppu-action]");
       if (!actionButton) return;
@@ -656,10 +775,18 @@
           return;
         }
 
-        var retryResult = applyFileIdToCafe24Input(currentUpload.fileId);
+        var retryResult = applyFileIdToCafe24Input(currentUpload.fileId, currentUpload.fileIdInputMatch);
         currentUpload.cafe24InputResult = retryResult;
+        currentUpload.fileIdInputMatch = retryResult.status === "success"
+          ? {
+            element: retryResult.element || (currentUpload.fileIdInputMatch && currentUpload.fileIdInputMatch.element),
+            source: retryResult.source
+          }
+          : currentUpload.fileIdInputMatch;
 
         if (retryResult.status === "success") {
+          makeFileIdInputReadonly(currentUpload.fileIdInputMatch, currentUpload.fileId);
+          watchFileIdInput(currentUpload, status, result);
           status.className = "ppu-status ppu-success";
           status.textContent = "업로드 파일 ID가 입력 옵션에 다시 반영되었습니다.";
           renderUploadResult(result, currentUpload.uploaded, currentUpload.fileId, retryResult);
@@ -682,8 +809,34 @@
       }
     });
 
+    fileInput.addEventListener("change", function () {
+      if (getSelectedFileCount(fileInput) > 1) {
+        fileInput.value = "";
+        showMessage(status, result, getMultipleFilesMessage(), true);
+      }
+    });
+
+    document.addEventListener("click", function (event) {
+      if (!currentUpload || !currentUpload.fileId) return;
+
+      var actionElement = event.target && event.target.closest && event.target.closest("a, button, input[type='button'], input[type='submit']");
+      if (!looksLikeOrderAction(actionElement)) return;
+      if (isFileIdInputValid(currentUpload)) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+      showFileIdChangedWarning(status, result);
+    }, true);
+
     form.addEventListener("submit", function (event) {
       event.preventDefault();
+
+      if (getSelectedFileCount(fileInput) > 1) {
+        fileInput.value = "";
+        showMessage(status, result, getMultipleFilesMessage(), true);
+        return;
+      }
 
       var file = fileInput.files && fileInput.files[0];
       if (!file) {
@@ -740,8 +893,13 @@
           currentUpload = {
             uploaded: uploaded,
             fileId: fileId,
-            cafe24InputResult: cafe24InputResult
+            cafe24InputResult: cafe24InputResult,
+            fileIdInputMatch: cafe24InputResult.status === "success" ? fileIdInputMatch : null
           };
+          if (cafe24InputResult.status === "success") {
+            makeFileIdInputReadonly(currentUpload.fileIdInputMatch, fileId);
+            watchFileIdInput(currentUpload, status, result);
+          }
           status.className = "ppu-status ppu-success";
           status.textContent = cafe24InputResult.status === "success"
             ? "파일 업로드가 완료되었습니다. 주문 시 업로드 파일 ID가 함께 전달됩니다."
