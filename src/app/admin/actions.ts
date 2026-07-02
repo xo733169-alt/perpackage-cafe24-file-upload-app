@@ -11,6 +11,11 @@ import {
 } from "@/lib/admin/auth";
 import { getFileById, updateFileOrderId } from "@/lib/files/file-service";
 import { createFileOrderLinkLog } from "@/lib/files/order-link-log-service";
+import {
+  createProofConfirmationRequest,
+  updateProofConfirmationStatus,
+  type ProofConfirmationStatus
+} from "@/lib/files/proof-confirmation-service";
 
 function getAdminRequestLogContext() {
   const headerStore = headers();
@@ -146,4 +151,117 @@ export async function linkCafe24LookupFileOrderIdAction(formData: FormData) {
   }
 
   redirectToCafe24Lookup(linkStatus);
+}
+
+function parseSelectedProofItems(value: FormDataEntryValue | null) {
+  if (typeof value !== "string" || !value.trim()) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed
+      .map((item) => typeof item === "string" ? item.trim() : "")
+      .filter(Boolean)
+      .slice(0, 20);
+  } catch {
+    return [];
+  }
+}
+
+function redirectToFileProofResult(fileId: string, status: string) {
+  const params = new URLSearchParams();
+  if (fileId) {
+    params.set("file_id", fileId);
+  }
+  params.set("proof_action", status);
+  redirect(`/admin?${params.toString()}`);
+}
+
+export async function createProofConfirmationRequestAction(formData: FormData) {
+  const fileId = String(formData.get("file_id") ?? "").trim();
+  const orderId = String(formData.get("order_id") ?? "").trim();
+  const requestMessage = String(formData.get("request_message") ?? "").trim();
+  const extraMemo = String(formData.get("extra_memo") ?? "").trim();
+  const selectedItems = parseSelectedProofItems(formData.get("selected_items"));
+
+  if (!isAdminAuthenticated()) {
+    redirect("/admin?auth=failed");
+  }
+
+  if (!fileId) {
+    redirectToFileProofResult("", "missing_file_id");
+  }
+
+  if (!requestMessage) {
+    redirectToFileProofResult(fileId, "empty_message");
+  }
+
+  try {
+    await createProofConfirmationRequest({
+      fileId,
+      orderId: orderId || null,
+      requestMessage,
+      selectedItems,
+      extraMemo,
+      requestedBy: "admin"
+    });
+  } catch (error) {
+    console.error("proof_confirmation_request_action_failed", {
+      message: error instanceof Error ? error.message : "Unknown error",
+      fileId
+    });
+    redirectToFileProofResult(fileId, "request_failed");
+  }
+
+  redirectToFileProofResult(fileId, "request_saved");
+}
+
+export async function updateProofConfirmationStatusAction(formData: FormData) {
+  const fileId = String(formData.get("file_id") ?? "").trim();
+  const confirmationId = String(formData.get("confirmation_id") ?? "").trim();
+  const proofStatus = String(formData.get("proof_status") ?? "").trim() as Exclude<
+    ProofConfirmationStatus,
+    "requested" | "skipped"
+  >;
+  const customerResponse = String(formData.get("customer_response") ?? "").trim();
+  const rejectReason = String(formData.get("reject_reason") ?? "").trim();
+  const responseChannel = String(formData.get("response_channel") ?? "").trim();
+
+  if (!isAdminAuthenticated()) {
+    redirect("/admin?auth=failed");
+  }
+
+  if (!fileId) {
+    redirectToFileProofResult("", "missing_file_id");
+  }
+
+  if (!confirmationId) {
+    redirectToFileProofResult(fileId, "missing_confirmation_id");
+  }
+
+  try {
+    await updateProofConfirmationStatus({
+      confirmationId,
+      proofStatus,
+      customerResponse,
+      rejectReason,
+      responseChannel,
+      confirmedBy: "admin"
+    });
+  } catch (error) {
+    console.error("proof_confirmation_status_action_failed", {
+      message: error instanceof Error ? error.message : "Unknown error",
+      fileId,
+      confirmationId,
+      proofStatus
+    });
+    redirectToFileProofResult(fileId, "status_failed");
+  }
+
+  redirectToFileProofResult(fileId, `${proofStatus}_saved`);
 }

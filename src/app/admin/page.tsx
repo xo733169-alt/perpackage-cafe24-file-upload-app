@@ -2,7 +2,8 @@ import {
   linkCafe24LookupFileOrderIdAction,
   linkFileOrderIdAction,
   loginAdminAction,
-  logoutAdminAction
+  logoutAdminAction,
+  updateProofConfirmationStatusAction
 } from "@/app/admin/actions";
 import { AdminFileStatusForm } from "@/components/AdminFileStatusForm";
 import { CopyFileIdButton } from "@/components/CopyFileIdButton";
@@ -35,6 +36,11 @@ import {
   listFileOrderLinkLogs,
   type FileOrderLinkLogRecord
 } from "@/lib/files/order-link-log-service";
+import {
+  getProofStatusLabel,
+  listProofConfirmationsByFileId,
+  type ProofConfirmationRecord
+} from "@/lib/files/proof-confirmation-service";
 import { FILE_STATUS_OPTIONS, getFileStatusLabel, isKnownFileStatus } from "@/lib/files/file-status";
 import {
   getFileById,
@@ -55,6 +61,7 @@ type FileLookupState = {
   downloadLogs: FileDownloadLogRecord[];
   statusLogs: FileStatusChangeLogRecord[];
   orderLinkLogs: FileOrderLinkLogRecord[];
+  proofConfirmations: ProofConfirmationRecord[];
   message: string | null;
   status: "idle" | "found" | "not_found" | "empty" | "error";
 };
@@ -91,6 +98,7 @@ type AdminPageProps = {
     order_id?: string | string[];
     cafe24_order_id?: string | string[];
     cafe24_link?: string | string[];
+    proof_action?: string | string[];
     recent_status?: string | string[];
     recent_order_link?: string | string[];
     download_file_id?: string | string[];
@@ -111,6 +119,7 @@ function readParam(
     | "order_id"
     | "cafe24_order_id"
     | "cafe24_link"
+    | "proof_action"
     | "recent_status"
     | "recent_order_link"
     | "download_file_id"
@@ -362,11 +371,45 @@ function getCafe24AutoLinkMessage(status: string) {
   }
 }
 
+function getProofActionMessage(status: string) {
+  switch (status) {
+    case "request_saved":
+      return "교정확인 요청 이력을 저장했습니다.";
+    case "confirmed_saved":
+      return "고객 확인 완료로 기록했습니다. 파일 상태는 자동으로 변경되지 않습니다.";
+    case "rejected_saved":
+      return "고객 수정 요청으로 기록했습니다. 필요하면 파일 상태를 별도로 변경해 주세요.";
+    case "canceled_saved":
+      return "교정확인 요청을 취소 처리했습니다.";
+    case "empty_message":
+      return "교정확인 안내문 내용을 확인할 수 없습니다.";
+    case "missing_file_id":
+      return "file_id를 확인할 수 없습니다.";
+    case "missing_confirmation_id":
+      return "교정확인 이력을 확인할 수 없습니다.";
+    case "request_failed":
+      return "교정확인 요청 이력 저장에 실패했습니다. DB 테이블 적용 여부를 확인해 주세요.";
+    case "status_failed":
+      return "교정확인 상태 기록에 실패했습니다. 이미 처리된 요청인지 확인해 주세요.";
+    default:
+      return "";
+  }
+}
+
 async function lookupFileById(rawFileId: string, shouldSearch: boolean): Promise<FileLookupState> {
   const query = rawFileId.trim();
 
   if (!shouldSearch) {
-    return { query: "", file: null, downloadLogs: [], statusLogs: [], orderLinkLogs: [], message: null, status: "idle" };
+    return {
+      query: "",
+      file: null,
+      downloadLogs: [],
+      statusLogs: [],
+      orderLinkLogs: [],
+      proofConfirmations: [],
+      message: null,
+      status: "idle"
+    };
   }
 
   if (!query) {
@@ -376,6 +419,7 @@ async function lookupFileById(rawFileId: string, shouldSearch: boolean): Promise
       downloadLogs: [],
       statusLogs: [],
       orderLinkLogs: [],
+      proofConfirmations: [],
       message: "file_id를 입력해 주세요.",
       status: "empty"
     };
@@ -391,17 +435,28 @@ async function lookupFileById(rawFileId: string, shouldSearch: boolean): Promise
         downloadLogs: [],
         statusLogs: [],
         orderLinkLogs: [],
+        proofConfirmations: [],
         message: "해당 file_id의 업로드 파일을 찾지 못했습니다.",
         status: "not_found"
       };
     }
 
-    const [downloadLogs, statusLogs, orderLinkLogs] = await Promise.all([
+    const [downloadLogs, statusLogs, orderLinkLogs, proofConfirmations] = await Promise.all([
       listFileDownloadLogs(file.id, 5),
       listFileStatusChangeLogs(file.id, 10),
-      listFileOrderLinkLogs(file.id, 5)
+      listFileOrderLinkLogs(file.id, 5),
+      listProofConfirmationsByFileId(file.id, 10)
     ]);
-    return { query, file, downloadLogs, statusLogs, orderLinkLogs, message: null, status: "found" };
+    return {
+      query,
+      file,
+      downloadLogs,
+      statusLogs,
+      orderLinkLogs,
+      proofConfirmations,
+      message: null,
+      status: "found"
+    };
   } catch (error) {
     return {
       query,
@@ -409,6 +464,7 @@ async function lookupFileById(rawFileId: string, shouldSearch: boolean): Promise
       downloadLogs: [],
       statusLogs: [],
       orderLinkLogs: [],
+      proofConfirmations: [],
       message: error instanceof Error ? error.message : "파일 조회에 실패했습니다.",
       status: "error"
     };
@@ -826,6 +882,131 @@ function StatusChangeLogPanel({ logs }: { logs: FileStatusChangeLogRecord[] }) {
             )) : (
               <tr>
                 <td colSpan={5}>아직 상태 변경 이력이 없습니다.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+const RESPONSE_CHANNEL_OPTIONS = ["채널톡", "카카오톡", "이메일", "전화", "기타"];
+
+function formatSelectedProofItems(items: string[] | null) {
+  if (!items?.length) {
+    return "-";
+  }
+
+  return items.join(", ");
+}
+
+function ProofConfirmationHistoryPanel({ logs }: { logs: ProofConfirmationRecord[] }) {
+  return (
+    <div style={{ marginTop: 18 }}>
+      <h3>교정확인 이력</h3>
+      <p>
+        고객 확인 완료, 수정 요청, 요청 취소는 내부 기록만 저장합니다. 이 작업은 파일 상태를 자동으로 변경하지 않습니다.
+      </p>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>요청일시</th>
+              <th>상태</th>
+              <th>선택 항목</th>
+              <th>추가 메모</th>
+              <th>회신 채널</th>
+              <th>고객 회신/수정 요청</th>
+              <th>처리자</th>
+              <th>기록</th>
+            </tr>
+          </thead>
+          <tbody>
+            {logs.length ? logs.map((log) => {
+              const isRequested = log.proof_status === "requested";
+              const responseText = log.reject_reason || log.customer_response || "-";
+
+              return (
+                <tr key={log.id}>
+                  <td>{log.requested_at ?? log.created_at}</td>
+                  <td><span className="status">{getProofStatusLabel(log.proof_status)}</span></td>
+                  <td>{formatSelectedProofItems(log.selected_items)}</td>
+                  <td>{log.extra_memo ?? "-"}</td>
+                  <td>{log.response_channel ?? "-"}</td>
+                  <td>{responseText}</td>
+                  <td>{log.confirmed_by ?? log.requested_by ?? "admin"}</td>
+                  <td>
+                    {isRequested ? (
+                      <div style={{ display: "grid", gap: 10, minWidth: 260 }}>
+                        <form action={updateProofConfirmationStatusAction} className="form">
+                          <input name="file_id" type="hidden" value={log.file_id} />
+                          <input name="confirmation_id" type="hidden" value={log.id} />
+                          <input name="proof_status" type="hidden" value="confirmed" />
+                          <div className="field">
+                            <label htmlFor={`confirmed_channel_${log.id}`}>회신 채널</label>
+                            <select id={`confirmed_channel_${log.id}`} name="response_channel" defaultValue="채널톡">
+                              {RESPONSE_CHANNEL_OPTIONS.map((option) => (
+                                <option key={option} value={option}>{option}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="field">
+                            <label htmlFor={`confirmed_response_${log.id}`}>고객 회신 메모</label>
+                            <textarea
+                              id={`confirmed_response_${log.id}`}
+                              name="customer_response"
+                              placeholder="예: 고객이 확인했습니다라고 회신"
+                              rows={2}
+                            />
+                          </div>
+                          <button className="button secondary button-small" type="submit">
+                            고객 확인 완료 기록
+                          </button>
+                        </form>
+                        <form action={updateProofConfirmationStatusAction} className="form">
+                          <input name="file_id" type="hidden" value={log.file_id} />
+                          <input name="confirmation_id" type="hidden" value={log.id} />
+                          <input name="proof_status" type="hidden" value="rejected" />
+                          <div className="field">
+                            <label htmlFor={`rejected_channel_${log.id}`}>회신 채널</label>
+                            <select id={`rejected_channel_${log.id}`} name="response_channel" defaultValue="채널톡">
+                              {RESPONSE_CHANNEL_OPTIONS.map((option) => (
+                                <option key={option} value={option}>{option}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="field">
+                            <label htmlFor={`reject_reason_${log.id}`}>수정 요청 메모</label>
+                            <textarea
+                              id={`reject_reason_${log.id}`}
+                              name="reject_reason"
+                              placeholder="예: 로고 위치 수정 요청"
+                              rows={2}
+                            />
+                          </div>
+                          <button className="button secondary button-small" type="submit">
+                            고객 수정 요청 기록
+                          </button>
+                        </form>
+                        <form action={updateProofConfirmationStatusAction}>
+                          <input name="file_id" type="hidden" value={log.file_id} />
+                          <input name="confirmation_id" type="hidden" value={log.id} />
+                          <input name="proof_status" type="hidden" value="canceled" />
+                          <button className="button secondary button-small" type="submit">
+                            요청 취소
+                          </button>
+                        </form>
+                      </div>
+                    ) : (
+                      "-"
+                    )}
+                  </td>
+                </tr>
+              );
+            }) : (
+              <tr>
+                <td colSpan={8}>아직 교정확인 이력이 없습니다.</td>
               </tr>
             )}
           </tbody>
@@ -1253,6 +1434,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
   });
   const orderLinkMessage = getOrderLinkMessage(readParam(searchParams, "order_link"));
   const cafe24AutoLinkMessage = getCafe24AutoLinkMessage(readParam(searchParams, "cafe24_link"));
+  const proofActionMessage = getProofActionMessage(readParam(searchParams, "proof_action"));
   const data = await getAdminData(
     fileIdQuery,
     hasFileIdParam(searchParams),
@@ -1434,10 +1616,12 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
               originalFilename={data.fileLookup.file.original_filename}
             />
             <ProofConfirmationMessagePanel
+              actionMessage={proofActionMessage}
               fileId={data.fileLookup.file.id}
               orderId={data.fileLookup.file.order_id}
               originalFilename={data.fileLookup.file.original_filename}
             />
+            <ProofConfirmationHistoryPanel logs={data.fileLookup.proofConfirmations} />
             <StatusChangeLogPanel logs={data.fileLookup.statusLogs} />
             <DownloadPanel file={data.fileLookup.file} />
             <DownloadLogPanel logs={data.fileLookup.downloadLogs} />

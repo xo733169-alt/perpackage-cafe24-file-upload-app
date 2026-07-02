@@ -1,11 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { createProofConfirmationRequestAction } from "@/app/admin/actions";
 
 type ProofConfirmationMessagePanelProps = {
   fileId: string;
   originalFilename: string;
   orderId: string | null;
+  actionMessage?: string | null;
 };
 
 const DEFAULT_PROOF_CHECK_ITEMS = [
@@ -89,7 +91,8 @@ function buildProofConfirmationMessage(input: {
 export function ProofConfirmationMessagePanel({
   fileId,
   originalFilename,
-  orderId
+  orderId,
+  actionMessage
 }: ProofConfirmationMessagePanelProps) {
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
   const [memo, setMemo] = useState("");
@@ -126,6 +129,7 @@ export function ProofConfirmationMessagePanel({
       <p>
         제작 전 고객에게 전달할 교정확인 안내문을 생성합니다. 선택 항목과 메모는 안내문에만 반영되며 DB에는 저장하지 않습니다.
       </p>
+      {actionMessage ? <div className="notice" style={{ marginTop: 12 }}>{actionMessage}</div> : null}
       <div className="field">
         <label>교정확인 항목</label>
         <div style={{ marginBottom: 8 }}>
@@ -179,6 +183,19 @@ export function ProofConfirmationMessagePanel({
         교정확인 안내문 복사
       </button>
       {copyMessage ? <p style={{ marginBottom: 0 }}>{copyMessage}</p> : null}
+      <form action={createProofConfirmationRequestAction} className="form" style={{ marginTop: 16 }}>
+        <input name="file_id" type="hidden" value={fileId} />
+        <input name="order_id" type="hidden" value={orderId ?? ""} />
+        <input name="request_message" type="hidden" value={message} />
+        <input name="selected_items" type="hidden" value={JSON.stringify(selectedItems)} />
+        <input name="extra_memo" type="hidden" value={memo} />
+        <p style={{ marginTop: 0 }}>
+          고객에게 안내문을 전달한 뒤 이력을 저장하세요. 복사와 이력 저장은 별개 동작입니다.
+        </p>
+        <button className="button secondary" type="submit">
+          교정확인 요청 저장
+        </button>
+      </form>
     </div>
   );
 }

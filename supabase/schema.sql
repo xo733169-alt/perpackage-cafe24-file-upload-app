@@ -115,6 +115,32 @@ create index if not exists file_order_link_logs_new_order_id_idx on public.file_
 create index if not exists file_order_link_logs_link_source_idx on public.file_order_link_logs (link_source);
 create index if not exists file_order_link_logs_created_at_idx on public.file_order_link_logs (created_at desc);
 
+create table if not exists public.file_proof_confirmations (
+  id uuid primary key default gen_random_uuid(),
+  file_id uuid not null references public.files(id) on delete cascade,
+  order_id text,
+  proof_status text not null,
+  request_message text,
+  selected_items jsonb,
+  extra_memo text,
+  customer_response text,
+  reject_reason text,
+  requested_by text,
+  requested_at timestamptz,
+  confirmed_by text,
+  confirmed_at timestamptz,
+  response_channel text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint file_proof_confirmations_status_check
+    check (proof_status in ('requested', 'confirmed', 'rejected', 'canceled', 'skipped'))
+);
+
+create index if not exists file_proof_confirmations_file_id_idx on public.file_proof_confirmations (file_id);
+create index if not exists file_proof_confirmations_order_id_idx on public.file_proof_confirmations (order_id);
+create index if not exists file_proof_confirmations_status_idx on public.file_proof_confirmations (proof_status);
+create index if not exists file_proof_confirmations_created_at_idx on public.file_proof_confirmations (created_at desc);
+
 -- Phase 1 note:
 -- Tokens are separated in cafe24_installations for future encryption.
 -- Before production, replace plain token columns with encrypted values or
