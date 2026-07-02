@@ -1,6 +1,7 @@
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export type ProofConfirmationStatus = "requested" | "confirmed" | "rejected" | "canceled" | "skipped";
+export type ProofConfirmationStatusFilter = ProofConfirmationStatus | "all";
 
 export type ProofConfirmationRecord = {
   id: string;
@@ -39,6 +40,13 @@ export type UpdateProofConfirmationStatusInput = {
   confirmedBy?: string | null;
 };
 
+export type ListProofConfirmationsInput = {
+  proofStatus?: ProofConfirmationStatusFilter;
+  fileId?: string;
+  orderId?: string;
+  limit?: number;
+};
+
 const PROOF_STATUS_LABELS: Record<ProofConfirmationStatus, string> = {
   requested: "교정확인 요청",
   confirmed: "고객 확인 완료",
@@ -51,6 +59,15 @@ const ALLOWED_UPDATE_STATUSES = new Set<UpdateProofConfirmationStatusInput["proo
   "confirmed",
   "rejected",
   "canceled"
+]);
+
+const ALLOWED_FILTER_STATUSES = new Set<ProofConfirmationStatusFilter>([
+  "all",
+  "requested",
+  "confirmed",
+  "rejected",
+  "canceled",
+  "skipped"
 ]);
 
 function sanitizeText(value?: string | null, maxLength = 1000) {
@@ -79,6 +96,12 @@ function sanitizeErrorMessage(message?: string | null) {
 
 export function getProofStatusLabel(status: string | null | undefined) {
   return PROOF_STATUS_LABELS[status as ProofConfirmationStatus] ?? status ?? "-";
+}
+
+export function getProofStatusFilter(value: string | null | undefined): ProofConfirmationStatusFilter {
+  return ALLOWED_FILTER_STATUSES.has(value as ProofConfirmationStatusFilter)
+    ? (value as ProofConfirmationStatusFilter)
+    : "all";
 }
 
 export async function createProofConfirmationRequest(
@@ -161,6 +184,53 @@ export async function listProofConfirmationsByFileId(
   }
 
   return (data ?? []) as ProofConfirmationRecord[];
+}
+
+export async function listProofConfirmations(
+  input: ListProofConfirmationsInput = {}
+): Promise<ProofConfirmationRecord[]> {
+  const proofStatus = getProofStatusFilter(input.proofStatus ?? "all");
+  const fileId = sanitizeText(input.fileId, 120);
+  const orderId = sanitizeText(input.orderId, 120);
+  const limit = Math.max(1, Math.min(input.limit ?? 10, 50));
+  const fetchLimit = fileId ? Math.max(limit, 100) : limit;
+
+  const supabase = getSupabaseAdmin();
+  let query = supabase
+    .from("file_proof_confirmations")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(fetchLimit);
+
+  if (proofStatus !== "all") {
+    query = query.eq("proof_status", proofStatus);
+  }
+
+  if (orderId) {
+    query = query.ilike("order_id", `%${orderId}%`);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error("proof_confirmations_admin_list_failed", {
+      code: error.code ?? null,
+      message: sanitizeErrorMessage(error.message),
+      details: sanitizeErrorMessage(error.details),
+      hint: sanitizeErrorMessage(error.hint),
+      proofStatus,
+      hasFileIdFilter: Boolean(fileId),
+      hasOrderIdFilter: Boolean(orderId)
+    });
+    return [];
+  }
+
+  const records = (data ?? []) as ProofConfirmationRecord[];
+  const filteredRecords = fileId
+    ? records.filter((record) => record.file_id.toLowerCase().includes(fileId.toLowerCase()))
+    : records;
+
+  return filteredRecords.slice(0, limit);
 }
 
 export async function updateProofConfirmationStatus(

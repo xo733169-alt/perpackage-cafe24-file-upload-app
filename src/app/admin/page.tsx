@@ -37,8 +37,11 @@ import {
   type FileOrderLinkLogRecord
 } from "@/lib/files/order-link-log-service";
 import {
+  getProofStatusFilter,
   getProofStatusLabel,
+  listProofConfirmations,
   listProofConfirmationsByFileId,
+  type ProofConfirmationStatusFilter,
   type ProofConfirmationRecord
 } from "@/lib/files/proof-confirmation-service";
 import { FILE_STATUS_OPTIONS, getFileStatusLabel, isKnownFileStatus } from "@/lib/files/file-status";
@@ -107,6 +110,9 @@ type AdminPageProps = {
     download_start_date?: string | string[];
     download_end_date?: string | string[];
     webhook_status?: string | string[];
+    proof_status?: string | string[];
+    proof_file_id?: string | string[];
+    proof_order_id?: string | string[];
   };
 };
 
@@ -128,6 +134,9 @@ function readParam(
     | "download_start_date"
     | "download_end_date"
     | "webhook_status"
+    | "proof_status"
+    | "proof_file_id"
+    | "proof_order_id"
 ) {
   const value = searchParams?.[key];
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
@@ -281,6 +290,27 @@ function getWebhookStatusFilter(value: string): Cafe24WebhookStatusFilter {
     : "all";
 }
 
+const PROOF_STATUS_FILTER_OPTIONS: Array<{ value: ProofConfirmationStatusFilter; label: string }> = [
+  { value: "all", label: "전체" },
+  { value: "requested", label: "교정확인 요청" },
+  { value: "confirmed", label: "고객 확인 완료" },
+  { value: "rejected", label: "고객 수정 요청" },
+  { value: "canceled", label: "요청 취소" },
+  { value: "skipped", label: "교정확인 생략" }
+];
+
+function getProofStatusClassName(status: string) {
+  if (status === "requested") {
+    return "status status-warning";
+  }
+
+  if (status === "confirmed") {
+    return "status status-success";
+  }
+
+  return "status";
+}
+
 type AdminPreservedQuery = {
   fileId: string;
   orderId: string;
@@ -292,6 +322,10 @@ type AdminPreservedQuery = {
   downloadResult: AdminDownloadLogResultFilter;
   downloadStartDate: string;
   downloadEndDate: string;
+  webhookStatus: Cafe24WebhookStatusFilter;
+  proofStatus: ProofConfirmationStatusFilter;
+  proofFileId: string;
+  proofOrderId: string;
 };
 
 function buildAdminHrefFromPreservedQuery(values: AdminPreservedQuery) {
@@ -307,12 +341,24 @@ function buildAdminHrefFromPreservedQuery(values: AdminPreservedQuery) {
   if (values.downloadResult !== "all") params.set("download_result", values.downloadResult);
   if (values.downloadStartDate) params.set("download_start_date", values.downloadStartDate);
   if (values.downloadEndDate) params.set("download_end_date", values.downloadEndDate);
+  if (values.webhookStatus !== "all") params.set("webhook_status", values.webhookStatus);
+  if (values.proofStatus !== "all") params.set("proof_status", values.proofStatus);
+  if (values.proofFileId) params.set("proof_file_id", values.proofFileId);
+  if (values.proofOrderId) params.set("proof_order_id", values.proofOrderId);
 
   const query = params.toString();
   return `/admin${query ? `?${query}` : ""}`;
 }
 
-function AdminPreservedQueryInputs({ values }: { values: AdminPreservedQuery }) {
+function AdminPreservedQueryInputs({
+  values,
+  omitWebhookFilter = false,
+  omitProofFilters = false
+}: {
+  values: AdminPreservedQuery;
+  omitWebhookFilter?: boolean;
+  omitProofFilters?: boolean;
+}) {
   return (
     <>
       {values.fileId ? <input name="file_id" type="hidden" value={values.fileId} /> : null}
@@ -329,6 +375,18 @@ function AdminPreservedQueryInputs({ values }: { values: AdminPreservedQuery }) 
         <input name="download_start_date" type="hidden" value={values.downloadStartDate} />
       ) : null}
       {values.downloadEndDate ? <input name="download_end_date" type="hidden" value={values.downloadEndDate} /> : null}
+      {!omitWebhookFilter && values.webhookStatus !== "all" ? (
+        <input name="webhook_status" type="hidden" value={values.webhookStatus} />
+      ) : null}
+      {!omitProofFilters && values.proofStatus !== "all" ? (
+        <input name="proof_status" type="hidden" value={values.proofStatus} />
+      ) : null}
+      {!omitProofFilters && values.proofFileId ? (
+        <input name="proof_file_id" type="hidden" value={values.proofFileId} />
+      ) : null}
+      {!omitProofFilters && values.proofOrderId ? (
+        <input name="proof_order_id" type="hidden" value={values.proofOrderId} />
+      ) : null}
     </>
   );
 }
@@ -583,7 +641,10 @@ async function getAdminData(
   downloadResultFilter: AdminDownloadLogResultFilter,
   downloadStartDateFilter: string,
   downloadEndDateFilter: string,
-  webhookStatusFilter: Cafe24WebhookStatusFilter
+  webhookStatusFilter: Cafe24WebhookStatusFilter,
+  proofStatusFilter: ProofConfirmationStatusFilter,
+  proofFileIdFilter: string,
+  proofOrderIdFilter: string
 ) {
   const cafe24 = getCafe24ConfigStatus();
   const supabase = getSupabaseConfigStatus();
@@ -592,6 +653,7 @@ async function getAdminData(
   let files: UploadedFileRecord[] = [];
   let adminDownloadLogs: AdminDownloadLogRecord[] = [];
   let cafe24WebhookEvents: Cafe24WebhookEventRecord[] = [];
+  let proofConfirmationLogs: ProofConfirmationRecord[] = [];
   let dataError = null;
   const [fileLookup, orderLookup] = await Promise.all([
     lookupFileById(fileIdQuery, shouldSearchFileId),
@@ -633,6 +695,17 @@ async function getAdminData(
     dataError = dataError ?? (error instanceof Error ? error.message : "Failed to load Cafe24 webhook events.");
   }
 
+  try {
+    proofConfirmationLogs = await listProofConfirmations({
+      proofStatus: proofStatusFilter,
+      fileId: proofFileIdFilter,
+      orderId: proofOrderIdFilter,
+      limit: 10
+    });
+  } catch (error) {
+    dataError = dataError ?? (error instanceof Error ? error.message : "Failed to load proof confirmation logs.");
+  }
+
   return {
     cafe24,
     supabase,
@@ -641,6 +714,7 @@ async function getAdminData(
     files,
     adminDownloadLogs,
     cafe24WebhookEvents,
+    proofConfirmationLogs,
     dataError,
     fileLookup,
     orderLookup,
@@ -749,7 +823,7 @@ function Cafe24WebhookEventsPanel({
         Cafe24 Webhook 요청이 실제로 들어오는지 확인하기 위한 최근 수신 로그입니다. payload 전체가 아니라 안전한 요약만 표시합니다.
       </p>
       <form className="form" method="get" style={{ marginTop: 16 }}>
-        <AdminPreservedQueryInputs values={preservedQuery} />
+        <AdminPreservedQueryInputs values={preservedQuery} omitWebhookFilter />
         <div className="grid grid-3">
           <div className="field">
             <label htmlFor="webhook_status">처리 상태 필터</label>
@@ -901,6 +975,19 @@ function formatSelectedProofItems(items: string[] | null) {
   return items.join(", ");
 }
 
+function summarizeProofText(value: string | null, maxLength = 80) {
+  if (!value) {
+    return "-";
+  }
+
+  const normalized = value.replace(/\s+/g, " ").trim();
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength)}...` : normalized;
+}
+
+function getProofResponseSummary(log: ProofConfirmationRecord) {
+  return summarizeProofText(log.reject_reason || log.customer_response, 80);
+}
+
 function ProofConfirmationHistoryPanel({ logs }: { logs: ProofConfirmationRecord[] }) {
   return (
     <div style={{ marginTop: 18 }}>
@@ -1013,6 +1100,118 @@ function ProofConfirmationHistoryPanel({ logs }: { logs: ProofConfirmationRecord
         </table>
       </div>
     </div>
+  );
+}
+
+function AdminProofConfirmationLogPanel({
+  logs,
+  proofStatus,
+  proofFileId,
+  proofOrderId,
+  preservedQuery
+}: {
+  logs: ProofConfirmationRecord[];
+  proofStatus: ProofConfirmationStatusFilter;
+  proofFileId: string;
+  proofOrderId: string;
+  preservedQuery: AdminPreservedQuery;
+}) {
+  const resetHref = buildAdminHrefFromPreservedQuery({
+    ...preservedQuery,
+    proofStatus: "all",
+    proofFileId: "",
+    proofOrderId: ""
+  });
+
+  return (
+    <section className="panel panel-pad">
+      <h2>전체 교정확인 이력</h2>
+      <p className="lead">
+        관리자가 저장한 교정확인 요청, 고객 확인 완료, 고객 수정 요청, 요청 취소 이력을 최근 순으로 확인할 수 있습니다.
+      </p>
+      <p>
+        교정확인 요청 상태는 고객 회신 대기 건입니다. 파일 상태는 이 목록에서 자동으로 변경하지 않습니다.
+      </p>
+
+      <form className="form" method="get" style={{ marginTop: 16, marginBottom: 16 }}>
+        <AdminPreservedQueryInputs values={preservedQuery} omitProofFilters />
+        <div className="grid grid-3">
+          <div className="field">
+            <label htmlFor="proof_status">proof_status</label>
+            <select id="proof_status" name="proof_status" defaultValue={proofStatus}>
+              {PROOF_STATUS_FILTER_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="proof_file_id">file_id</label>
+            <input
+              id="proof_file_id"
+              name="proof_file_id"
+              placeholder="file_id 전체 또는 일부를 입력하세요"
+              defaultValue={proofFileId}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="proof_order_id">Cafe24 주문번호</label>
+            <input
+              id="proof_order_id"
+              name="proof_order_id"
+              placeholder="Cafe24 주문번호를 입력하세요"
+              defaultValue={proofOrderId}
+            />
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button className="button" type="submit">필터 적용</button>
+          <a className="button secondary" href={resetHref}>초기화</a>
+        </div>
+      </form>
+
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>요청일시</th>
+              <th>상태</th>
+              <th>Cafe24 주문번호</th>
+              <th>file_id</th>
+              <th>선택 항목</th>
+              <th>추가 메모</th>
+              <th>회신 채널</th>
+              <th>고객 회신/수정 요청</th>
+              <th>처리자</th>
+            </tr>
+          </thead>
+          <tbody>
+            {logs.length ? logs.map((log) => (
+              <tr key={log.id}>
+                <td>{log.requested_at ?? log.created_at}</td>
+                <td>
+                  <span className={getProofStatusClassName(log.proof_status)}>
+                    {getProofStatusLabel(log.proof_status)}
+                  </span>
+                </td>
+                <td>{log.order_id ?? "미연결"}</td>
+                <td><CopyFileIdButton fileId={log.file_id} /></td>
+                <td>{formatSelectedProofItems(log.selected_items)}</td>
+                <td>{summarizeProofText(log.extra_memo, 80)}</td>
+                <td>{log.response_channel ?? "-"}</td>
+                <td>{getProofResponseSummary(log)}</td>
+                <td>{log.confirmed_by ?? log.requested_by ?? "admin"}</td>
+              </tr>
+            )) : (
+              <tr>
+                <td colSpan={9}>조건에 맞는 교정확인 이력이 없습니다.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
@@ -1413,6 +1612,9 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
   const downloadStartDateFilter = readParam(searchParams, "download_start_date").trim();
   const downloadEndDateFilter = readParam(searchParams, "download_end_date").trim();
   const webhookStatusFilter = getWebhookStatusFilter(readParam(searchParams, "webhook_status"));
+  const proofStatusFilter = getProofStatusFilter(readParam(searchParams, "proof_status"));
+  const proofFileIdFilter = readParam(searchParams, "proof_file_id").trim();
+  const proofOrderIdFilter = readParam(searchParams, "proof_order_id").trim();
   const preservedQuery: AdminPreservedQuery = {
     fileId: fileIdQuery,
     orderId: orderIdQuery,
@@ -1423,7 +1625,11 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     downloadOrderId: downloadOrderIdFilter,
     downloadResult: downloadResultFilter,
     downloadStartDate: downloadStartDateFilter,
-    downloadEndDate: downloadEndDateFilter
+    downloadEndDate: downloadEndDateFilter,
+    webhookStatus: webhookStatusFilter,
+    proofStatus: proofStatusFilter,
+    proofFileId: proofFileIdFilter,
+    proofOrderId: proofOrderIdFilter
   };
   const downloadLogsExportHref = buildDownloadLogExportHref({
     fileId: downloadFileIdFilter,
@@ -1449,7 +1655,10 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     downloadResultFilter,
     downloadStartDateFilter,
     downloadEndDateFilter,
-    webhookStatusFilter
+    webhookStatusFilter,
+    proofStatusFilter,
+    proofFileIdFilter,
+    proofOrderIdFilter
   );
   const isSupabaseConfigured = data.supabase.hasUrl && data.supabase.hasAnonKey && data.supabase.hasServiceRoleKey;
 
@@ -1512,6 +1721,14 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
       <Cafe24WebhookEventsPanel
         events={data.cafe24WebhookEvents}
         selectedStatus={webhookStatusFilter}
+        preservedQuery={preservedQuery}
+      />
+
+      <AdminProofConfirmationLogPanel
+        logs={data.proofConfirmationLogs}
+        proofStatus={proofStatusFilter}
+        proofFileId={proofFileIdFilter}
+        proofOrderId={proofOrderIdFilter}
         preservedQuery={preservedQuery}
       />
 
