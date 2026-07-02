@@ -383,6 +383,7 @@
       };
     }
 
+    releaseFileIdInput(match);
     setFieldValue(match.element, fileId);
     dispatchFieldEvent(match.element, "input");
     dispatchFieldEvent(match.element, "change");
@@ -424,6 +425,16 @@
     match.element.removeAttribute("readonly");
     match.element.removeAttribute("aria-readonly");
     match.element.removeAttribute("data-perpackage-file-id");
+  }
+
+  function clearFileIdInput(match) {
+    if (!match || !match.element) return;
+
+    releaseFileIdInput(match);
+    setFieldValue(match.element, "");
+    dispatchFieldEvent(match.element, "input");
+    dispatchFieldEvent(match.element, "change");
+    dispatchFieldEvent(match.element, "blur");
   }
 
   function getCurrentFileIdValue(uploadState) {
@@ -760,6 +771,7 @@
     var result = wrapper.querySelector(".ppu-result");
     var appOrigin = getAppOrigin();
     var currentUpload = null;
+    var lastFileIdInputMatch = null;
 
     fileInput.removeAttribute("multiple");
 
@@ -783,6 +795,9 @@
             source: retryResult.source
           }
           : currentUpload.fileIdInputMatch;
+        if (retryResult.status === "success") {
+          lastFileIdInputMatch = currentUpload.fileIdInputMatch;
+        }
 
         if (retryResult.status === "success") {
           makeFileIdInputReadonly(currentUpload.fileIdInputMatch, currentUpload.fileId);
@@ -798,6 +813,11 @@
       }
 
       if (action === "reset-upload") {
+        var fieldToClear = currentUpload && currentUpload.fileIdInputMatch
+          ? currentUpload.fileIdInputMatch
+          : lastFileIdInputMatch;
+        clearFileIdInput(fieldToClear);
+        lastFileIdInputMatch = fieldToClear;
         currentUpload = null;
         form.reset();
         fileInput.value = "";
@@ -849,7 +869,7 @@
         return;
       }
 
-      var fileIdInputMatch = findFileIdInput();
+      var fileIdInputMatch = lastFileIdInputMatch || findFileIdInput();
       if (!fileIdInputMatch || !fileIdInputMatch.element) {
         status.className = "ppu-status ppu-warning";
         status.textContent = "먼저 상품 옵션을 선택해 주세요. 옵션 선택 후 파일 업로드를 진행할 수 있습니다.";
@@ -894,9 +914,15 @@
             uploaded: uploaded,
             fileId: fileId,
             cafe24InputResult: cafe24InputResult,
-            fileIdInputMatch: cafe24InputResult.status === "success" ? fileIdInputMatch : null
+            fileIdInputMatch: cafe24InputResult.status === "success"
+              ? {
+                element: cafe24InputResult.element || fileIdInputMatch.element,
+                source: cafe24InputResult.source
+              }
+              : null
           };
           if (cafe24InputResult.status === "success") {
+            lastFileIdInputMatch = currentUpload.fileIdInputMatch;
             makeFileIdInputReadonly(currentUpload.fileIdInputMatch, fileId);
             watchFileIdInput(currentUpload, status, result);
           }
