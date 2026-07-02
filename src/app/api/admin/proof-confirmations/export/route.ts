@@ -87,6 +87,8 @@ export async function GET(request: Request) {
       proofStatus: getProofStatusFilter(url.searchParams.get("proof_status")),
       fileId: url.searchParams.get("proof_file_id") ?? "",
       orderId: url.searchParams.get("proof_order_id") ?? "",
+      startDate: url.searchParams.get("proof_start_date") ?? "",
+      endDate: url.searchParams.get("proof_end_date") ?? "",
       limit: CSV_EXPORT_LIMIT
     });
     csv = buildProofConfirmationLogsCsv(logs);

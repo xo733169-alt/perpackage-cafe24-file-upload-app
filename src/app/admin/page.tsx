@@ -113,6 +113,8 @@ type AdminPageProps = {
     proof_status?: string | string[];
     proof_file_id?: string | string[];
     proof_order_id?: string | string[];
+    proof_start_date?: string | string[];
+    proof_end_date?: string | string[];
   };
 };
 
@@ -137,6 +139,8 @@ function readParam(
     | "proof_status"
     | "proof_file_id"
     | "proof_order_id"
+    | "proof_start_date"
+    | "proof_end_date"
 ) {
   const value = searchParams?.[key];
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
@@ -220,11 +224,15 @@ function buildDownloadLogExportHref({
 function buildProofConfirmationLogExportHref({
   proofStatus,
   fileId,
-  orderId
+  orderId,
+  startDate,
+  endDate
 }: {
   proofStatus: ProofConfirmationStatusFilter;
   fileId: string;
   orderId: string;
+  startDate: string;
+  endDate: string;
 }) {
   const params = new URLSearchParams();
 
@@ -238,6 +246,14 @@ function buildProofConfirmationLogExportHref({
 
   if (orderId) {
     params.set("proof_order_id", orderId);
+  }
+
+  if (startDate) {
+    params.set("proof_start_date", startDate);
+  }
+
+  if (endDate) {
+    params.set("proof_end_date", endDate);
   }
 
   const query = params.toString();
@@ -363,6 +379,8 @@ type AdminPreservedQuery = {
   proofStatus: ProofConfirmationStatusFilter;
   proofFileId: string;
   proofOrderId: string;
+  proofStartDate: string;
+  proofEndDate: string;
 };
 
 function buildAdminHrefFromPreservedQuery(values: AdminPreservedQuery) {
@@ -382,6 +400,8 @@ function buildAdminHrefFromPreservedQuery(values: AdminPreservedQuery) {
   if (values.proofStatus !== "all") params.set("proof_status", values.proofStatus);
   if (values.proofFileId) params.set("proof_file_id", values.proofFileId);
   if (values.proofOrderId) params.set("proof_order_id", values.proofOrderId);
+  if (values.proofStartDate) params.set("proof_start_date", values.proofStartDate);
+  if (values.proofEndDate) params.set("proof_end_date", values.proofEndDate);
 
   const query = params.toString();
   return `/admin${query ? `?${query}` : ""}`;
@@ -423,6 +443,12 @@ function AdminPreservedQueryInputs({
       ) : null}
       {!omitProofFilters && values.proofOrderId ? (
         <input name="proof_order_id" type="hidden" value={values.proofOrderId} />
+      ) : null}
+      {!omitProofFilters && values.proofStartDate ? (
+        <input name="proof_start_date" type="hidden" value={values.proofStartDate} />
+      ) : null}
+      {!omitProofFilters && values.proofEndDate ? (
+        <input name="proof_end_date" type="hidden" value={values.proofEndDate} />
       ) : null}
     </>
   );
@@ -699,7 +725,9 @@ async function getAdminData(
   webhookStatusFilter: Cafe24WebhookStatusFilter,
   proofStatusFilter: ProofConfirmationStatusFilter,
   proofFileIdFilter: string,
-  proofOrderIdFilter: string
+  proofOrderIdFilter: string,
+  proofStartDateFilter: string,
+  proofEndDateFilter: string
 ) {
   const cafe24 = getCafe24ConfigStatus();
   const supabase = getSupabaseConfigStatus();
@@ -755,6 +783,8 @@ async function getAdminData(
       proofStatus: proofStatusFilter,
       fileId: proofFileIdFilter,
       orderId: proofOrderIdFilter,
+      startDate: proofStartDateFilter,
+      endDate: proofEndDateFilter,
       limit: 10
     });
   } catch (error) {
@@ -1163,6 +1193,8 @@ function AdminProofConfirmationLogPanel({
   proofStatus,
   proofFileId,
   proofOrderId,
+  proofStartDate,
+  proofEndDate,
   exportHref,
   preservedQuery
 }: {
@@ -1170,6 +1202,8 @@ function AdminProofConfirmationLogPanel({
   proofStatus: ProofConfirmationStatusFilter;
   proofFileId: string;
   proofOrderId: string;
+  proofStartDate: string;
+  proofEndDate: string;
   exportHref: string;
   preservedQuery: AdminPreservedQuery;
 }) {
@@ -1177,7 +1211,9 @@ function AdminProofConfirmationLogPanel({
     ...preservedQuery,
     proofStatus: "all",
     proofFileId: "",
-    proofOrderId: ""
+    proofOrderId: "",
+    proofStartDate: "",
+    proofEndDate: ""
   });
 
   return (
@@ -1219,6 +1255,24 @@ function AdminProofConfirmationLogPanel({
               name="proof_order_id"
               placeholder="Cafe24 주문번호를 입력하세요"
               defaultValue={proofOrderId}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="proof_start_date">시작일</label>
+            <input
+              id="proof_start_date"
+              name="proof_start_date"
+              type="date"
+              defaultValue={proofStartDate}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="proof_end_date">종료일</label>
+            <input
+              id="proof_end_date"
+              name="proof_end_date"
+              type="date"
+              defaultValue={proofEndDate}
             />
           </div>
         </div>
@@ -1673,6 +1727,8 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
   const proofStatusFilter = getProofStatusFilter(readParam(searchParams, "proof_status"));
   const proofFileIdFilter = readParam(searchParams, "proof_file_id").trim();
   const proofOrderIdFilter = readParam(searchParams, "proof_order_id").trim();
+  const proofStartDateFilter = readParam(searchParams, "proof_start_date").trim();
+  const proofEndDateFilter = readParam(searchParams, "proof_end_date").trim();
   const preservedQuery: AdminPreservedQuery = {
     fileId: fileIdQuery,
     orderId: orderIdQuery,
@@ -1687,7 +1743,9 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     webhookStatus: webhookStatusFilter,
     proofStatus: proofStatusFilter,
     proofFileId: proofFileIdFilter,
-    proofOrderId: proofOrderIdFilter
+    proofOrderId: proofOrderIdFilter,
+    proofStartDate: proofStartDateFilter,
+    proofEndDate: proofEndDateFilter
   };
   const downloadLogsExportHref = buildDownloadLogExportHref({
     fileId: downloadFileIdFilter,
@@ -1699,7 +1757,9 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
   const proofConfirmationLogsExportHref = buildProofConfirmationLogExportHref({
     proofStatus: proofStatusFilter,
     fileId: proofFileIdFilter,
-    orderId: proofOrderIdFilter
+    orderId: proofOrderIdFilter,
+    startDate: proofStartDateFilter,
+    endDate: proofEndDateFilter
   });
   const orderLinkMessage = getOrderLinkMessage(readParam(searchParams, "order_link"));
   const cafe24AutoLinkMessage = getCafe24AutoLinkMessage(readParam(searchParams, "cafe24_link"));
@@ -1721,7 +1781,9 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     webhookStatusFilter,
     proofStatusFilter,
     proofFileIdFilter,
-    proofOrderIdFilter
+    proofOrderIdFilter,
+    proofStartDateFilter,
+    proofEndDateFilter
   );
   const isSupabaseConfigured = data.supabase.hasUrl && data.supabase.hasAnonKey && data.supabase.hasServiceRoleKey;
 
@@ -1794,6 +1856,8 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
         proofStatus={proofStatusFilter}
         proofFileId={proofFileIdFilter}
         proofOrderId={proofOrderIdFilter}
+        proofStartDate={proofStartDateFilter}
+        proofEndDate={proofEndDateFilter}
         exportHref={proofConfirmationLogsExportHref}
         preservedQuery={preservedQuery}
       />

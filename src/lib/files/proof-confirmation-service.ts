@@ -44,6 +44,8 @@ export type ListProofConfirmationsInput = {
   proofStatus?: ProofConfirmationStatusFilter;
   fileId?: string;
   orderId?: string;
+  startDate?: string;
+  endDate?: string;
   limit?: number;
 };
 
@@ -92,6 +94,22 @@ function sanitizeTextList(values?: string[] | null) {
 
 function sanitizeErrorMessage(message?: string | null) {
   return sanitizeText(message, 300);
+}
+
+function toKoreaDateBoundaryIso(value: string | null | undefined, boundary: "start" | "end") {
+  const date = sanitizeText(value, 10);
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return null;
+  }
+
+  const time = boundary === "start" ? "00:00:00.000" : "23:59:59.999";
+  const parsed = new Date(`${date}T${time}+09:00`);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return parsed.toISOString();
 }
 
 export function getProofStatusLabel(status: string | null | undefined) {
@@ -192,6 +210,8 @@ export async function listProofConfirmations(
   const proofStatus = getProofStatusFilter(input.proofStatus ?? "all");
   const fileId = sanitizeText(input.fileId, 120);
   const orderId = sanitizeText(input.orderId, 120);
+  const startDateIso = toKoreaDateBoundaryIso(input.startDate, "start");
+  const endDateIso = toKoreaDateBoundaryIso(input.endDate, "end");
   const limit = Math.max(1, Math.min(input.limit ?? 10, 1000));
   const fetchLimit = fileId ? Math.max(limit, 100) : limit;
 
@@ -210,6 +230,14 @@ export async function listProofConfirmations(
     query = query.ilike("order_id", `%${orderId}%`);
   }
 
+  if (startDateIso) {
+    query = query.gte("created_at", startDateIso);
+  }
+
+  if (endDateIso) {
+    query = query.lte("created_at", endDateIso);
+  }
+
   const { data, error } = await query;
 
   if (error) {
@@ -220,7 +248,9 @@ export async function listProofConfirmations(
       hint: sanitizeErrorMessage(error.hint),
       proofStatus,
       hasFileIdFilter: Boolean(fileId),
-      hasOrderIdFilter: Boolean(orderId)
+      hasOrderIdFilter: Boolean(orderId),
+      hasStartDateFilter: Boolean(startDateIso),
+      hasEndDateFilter: Boolean(endDateIso)
     });
     return [];
   }
