@@ -326,6 +326,16 @@ const PROOF_STATUS_FILTER_OPTIONS: Array<{ value: ProofConfirmationStatusFilter;
   { value: "skipped", label: "교정확인 생략" }
 ];
 
+const ADMIN_QUICK_NAV_ITEMS = [
+  { href: "#cafe24-order-test", label: "주문 조회" },
+  { href: "#webhook-logs", label: "Webhook 로그" },
+  { href: "#proof-confirmation-logs", label: "교정확인 이력" },
+  { href: "#find-files-by-order", label: "주문번호 검색" },
+  { href: "#find-file-by-id", label: "파일 ID 검색" },
+  { href: "#recent-files", label: "최근 업로드" },
+  { href: "#download-logs", label: "다운로드 로그" }
+] as const;
+
 function getProofStatusClassName(status: string) {
   if (status === "requested") {
     return "status status-warning";
@@ -415,6 +425,24 @@ function AdminPreservedQueryInputs({
         <input name="proof_order_id" type="hidden" value={values.proofOrderId} />
       ) : null}
     </>
+  );
+}
+
+function AdminQuickNav() {
+  return (
+    <section className="panel panel-pad" aria-labelledby="admin-quick-nav-title">
+      <h2 id="admin-quick-nav-title">빠른 이동</h2>
+      <p className="lead">
+        자주 확인하는 관리자 섹션으로 바로 이동할 수 있습니다. 기존 조회, 다운로드, 상태 변경 기능은 그대로 유지됩니다.
+      </p>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
+        {ADMIN_QUICK_NAV_ITEMS.map((item) => (
+          <a className="button secondary button-small" href={item.href} key={item.href}>
+            {item.label}
+          </a>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -844,7 +872,7 @@ function Cafe24WebhookEventsPanel({
   preservedQuery: AdminPreservedQuery;
 }) {
   return (
-    <section className="panel panel-pad">
+    <section className="panel panel-pad" id="webhook-logs">
       <h2>Cafe24 Webhook 수신 로그</h2>
       <p className="lead">
         Cafe24 Webhook 요청이 실제로 들어오는지 확인하기 위한 최근 수신 로그입니다. payload 전체가 아니라 안전한 요약만 표시합니다.
@@ -1153,7 +1181,7 @@ function AdminProofConfirmationLogPanel({
   });
 
   return (
-    <section className="panel panel-pad">
+    <section className="panel panel-pad" id="proof-confirmation-logs">
       <h2>전체 교정확인 이력</h2>
       <p className="lead">
         관리자가 저장한 교정확인 요청, 고객 확인 완료, 고객 수정 요청, 요청 취소 이력을 최근 순으로 확인할 수 있습니다.
@@ -1383,7 +1411,7 @@ function Cafe24OrderApiLookupPanel({
   linkMessage: string;
 }) {
   return (
-    <section className="panel panel-pad">
+    <section className="panel panel-pad" id="cafe24-order-test">
       <h2>Cafe24 주문 조회 테스트</h2>
       <p className="lead">
         Cafe24 Admin API로 주문 상세를 조회해 상품 옵션 안의 업로드 파일 ID가 API 응답에 포함되는지 확인합니다.
@@ -1751,6 +1779,8 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
         </div>
       </section>
 
+      <AdminQuickNav />
+
       <Cafe24OrderApiLookupPanel lookup={data.cafe24OrderLookup} linkMessage={cafe24AutoLinkMessage} />
 
       <Cafe24WebhookEventsPanel
@@ -1768,7 +1798,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
         preservedQuery={preservedQuery}
       />
 
-      <section className="panel panel-pad">
+      <section className="panel panel-pad" id="find-files-by-order">
         <h2>주문번호로 업로드 파일 찾기</h2>
         <p className="lead">
           Cafe24 주문번호를 입력하면 해당 주문번호에 연결된 업로드 파일 목록을 확인할 수 있습니다.
@@ -1816,7 +1846,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
         ) : null}
       </section>
 
-      <section className="panel panel-pad">
+      <section className="panel panel-pad" id="find-file-by-id">
         <h2>파일 ID로 업로드 파일 찾기</h2>
         <p className="lead">
           Cafe24 관리자 주문상세에 표시된 “업로드 파일 ID”를 입력하면 저장된 파일 정보를 확인할 수 있습니다.
@@ -1882,7 +1912,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
         ) : null}
       </section>
 
-      <section className="panel panel-pad">
+      <section className="panel panel-pad" id="recent-files">
         <h2>최근 업로드 파일</h2>
         <p className="lead">
           최근 고객이 업로드한 파일 목록입니다. 파일을 다운로드하거나 상태를 변경할 수 있습니다.
@@ -1979,7 +2009,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
         </div>
       </section>
 
-      <section className="panel panel-pad">
+      <section className="panel panel-pad" id="download-logs">
         <h2>전체 다운로드 로그</h2>
         <p className="lead">
           관리자가 파일을 다운로드한 이력을 최근 순으로 확인할 수 있습니다. file_id, Cafe24 주문번호, 결과 기준으로 필터링할 수 있습니다.
