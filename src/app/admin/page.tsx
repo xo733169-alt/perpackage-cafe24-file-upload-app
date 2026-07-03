@@ -2206,7 +2206,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
       <section className="panel panel-pad" id="recent-files">
         <h2>최근 업로드 파일</h2>
         <p className="lead">
-          최근 고객이 업로드한 파일 목록입니다. 파일을 다운로드하거나 상태를 변경할 수 있습니다.
+          최근 고객이 업로드한 파일을 빠르게 확인하는 요약 목록입니다. 상태 변경은 상세 보기에서 처리합니다.
         </p>
         <form className="form" method="get" style={{ marginTop: 16, marginBottom: 16 }}>
           <input name="tab" type="hidden" value="today" />
@@ -2251,19 +2251,16 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
           </div>
         </form>
         <div className="table-wrap recent-files-table-wrap">
-          <table>
+          <table className="recent-files-summary-table">
             <thead>
               <tr>
-                <th>File name</th>
+                <th>파일명</th>
                 <th>file_id</th>
                 <th>Cafe24 주문번호</th>
-                <th>mall/product</th>
-                <th>Size</th>
-                <th>MIME</th>
-                <th>Status</th>
-                <th>Uploaded at</th>
-                <th>Download</th>
-                <th>상태 변경</th>
+                <th>상태</th>
+                <th>업로드일</th>
+                <th>다운로드</th>
+                <th>상세 보기</th>
               </tr>
             </thead>
             <tbody>
@@ -2272,9 +2269,6 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                   <td>{file.original_filename}</td>
                   <td><CopyFileIdButton fileId={file.id} /></td>
                   <td>{file.order_id ?? "미연결"}</td>
-                  <td>{file.mall_id ?? "-"} / {file.product_no ?? "-"}</td>
-                  <td>{file.file_size.toLocaleString()} bytes</td>
-                  <td>{file.mime_type}</td>
                   <td><span className="status">{getFileStatusLabel(file.status)}</span></td>
                   <td>{file.created_at}</td>
                   <td>
@@ -2286,12 +2280,17 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                     </AdminDownloadLink>
                   </td>
                   <td>
-                    <AdminFileStatusForm fileId={file.id} currentStatus={file.status} variant="compact" />
+                    <a
+                      className="button secondary button-small"
+                      href={`/admin?tab=files&file_id=${encodeURIComponent(file.id)}`}
+                    >
+                      상세 보기
+                    </a>
                   </td>
                 </tr>
               )) : (
                 <tr>
-                  <td colSpan={10}>최근 업로드 파일이 없습니다.</td>
+                  <td colSpan={7}>최근 업로드 파일이 없습니다.</td>
                 </tr>
               )}
             </tbody>
