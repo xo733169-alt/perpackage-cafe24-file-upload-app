@@ -945,6 +945,62 @@
           button.disabled = false;
         });
     });
+
+    applyEditorFileIdFromUrl();
+
+    function applyEditorFileIdFromUrl() {
+      var editorFileId = "";
+      try {
+        editorFileId = String(new URLSearchParams(window.location.search).get("perpackage_file_id") || "").trim();
+      } catch (error) {
+        return;
+      }
+      if (!editorFileId || !/^[0-9a-zA-Z-]{8,64}$/.test(editorFileId)) return;
+
+      var tryApply = function () {
+        if (currentUpload && currentUpload.fileId) return true;
+
+        var match = findFileIdInput();
+        if (!match || !match.element) return false;
+
+        var applied = applyFileIdToCafe24Input(editorFileId, match);
+        if (applied.status !== "success") return false;
+
+        var editorUpload = {
+          uploaded: { original_filename: "전개도 에디터 디자인 파일", status: "uploaded_pending" },
+          fileId: editorFileId,
+          cafe24InputResult: applied,
+          fileIdInputMatch: {
+            element: applied.element || match.element,
+            source: applied.source
+          }
+        };
+        currentUpload = editorUpload;
+        lastFileIdInputMatch = editorUpload.fileIdInputMatch;
+        makeFileIdInputReadonly(editorUpload.fileIdInputMatch, editorFileId);
+        watchFileIdInput(editorUpload, status, result);
+        status.className = "ppu-status ppu-success";
+        status.textContent = "전개도 에디터에서 업로드한 파일 ID가 입력 옵션에 자동 입력되었습니다. 이 값은 수정하지 말아 주세요.";
+        return true;
+      };
+
+      if (tryApply()) return;
+
+      status.className = "ppu-status";
+      status.textContent = "전개도 에디터 디자인 파일 ID를 확인했습니다. 상품 옵션을 선택하면 자동으로 입력됩니다.";
+
+      var attempts = 0;
+      var timer = setInterval(function () {
+        attempts += 1;
+        if (tryApply() || attempts >= 40) {
+          clearInterval(timer);
+          if (attempts >= 40 && !(currentUpload && currentUpload.fileId)) {
+            status.className = "ppu-status ppu-warning";
+            status.textContent = "업로드 파일 ID 입력칸을 찾지 못했습니다. 상품 옵션을 선택한 뒤, 에디터에서 복사한 업로드 파일 ID를 직접 붙여넣어 주세요.";
+          }
+        }
+      }, 1500);
+    }
   }
 
   function showMessage(status, result, message, isError) {
