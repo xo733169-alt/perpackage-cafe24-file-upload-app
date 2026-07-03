@@ -2250,7 +2250,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
             </div>
           </div>
         </form>
-        <div className="table-wrap">
+        <div className="table-wrap recent-files-table-wrap">
           <table>
             <thead>
               <tr>

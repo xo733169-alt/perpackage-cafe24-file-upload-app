@@ -33,7 +33,7 @@ textarea {
 }
 
 .app-shell {
-  width: min(1120px, calc(100% - 32px));
+  width: min(1520px, calc(100% - 32px));
   margin: 0 auto;
   padding: 28px 0 56px;
 }
@@ -305,13 +305,14 @@ h2 {
 .table-wrap {
   max-width: 100%;
   overflow-x: auto;
+  overscroll-behavior-inline: contain;
   border: 1px solid var(--line);
   border-radius: 10px;
 }
 
 table {
   width: 100%;
-  min-width: 1180px;
+  min-width: 1120px;
   border-collapse: collapse;
   background: #fff;
 }
@@ -389,7 +390,7 @@ th {
 
 .form-compact {
   gap: 8px;
-  min-width: 190px;
+  min-width: 0;
 }
 
 .form-compact .field {
@@ -409,8 +410,42 @@ th {
 }
 
 .status-form-compact {
-  min-width: 210px;
+  width: 180px;
+  min-width: 180px;
+  max-width: 180px;
   color: var(--ink);
+}
+
+.recent-files-table-wrap table {
+  min-width: 1320px;
+}
+
+.recent-files-table-wrap th,
+.recent-files-table-wrap td {
+  padding: 10px;
+}
+
+.recent-files-table-wrap th:nth-child(1),
+.recent-files-table-wrap td:nth-child(1) {
+  min-width: 210px;
+}
+
+.recent-files-table-wrap th:nth-child(2),
+.recent-files-table-wrap td:nth-child(2) {
+  min-width: 170px;
+}
+
+.recent-files-table-wrap th:nth-child(7),
+.recent-files-table-wrap td:nth-child(7),
+.recent-files-table-wrap th:nth-child(9),
+.recent-files-table-wrap td:nth-child(9) {
+  white-space: nowrap;
+}
+
+.recent-files-table-wrap th:nth-child(10),
+.recent-files-table-wrap td:nth-child(10) {
+  width: 190px;
+  min-width: 190px;
 }
 
 .result {
