@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, type FormEvent } from "react";
+import { AdminDownloadLink } from "@/components/AdminDownloadLogRefreshControls";
 import type { FileReuploadRequestRecord } from "@/lib/files/reupload-request-service";
 
 type ReuploadLinkCreatePanelProps = {
@@ -19,16 +20,28 @@ type CreateReuploadRequestResponse = {
 
 const STATUS_LABELS: Record<string, string> = {
   requested: "재업로드 요청",
-  uploaded: "고객 업로드 완료",
-  reviewing: "파일 확인 중",
+  uploaded: "재업로드 완료",
+  reviewing: "확인 중",
   completed: "처리 완료",
   expired: "만료됨",
-  canceled: "요청 취소",
-  failed: "처리 실패"
+  canceled: "취소됨",
+  failed: "실패"
 };
 
 function formatStatus(status: string) {
   return STATUS_LABELS[status] ?? status;
+}
+
+function getStatusClassName(status: string) {
+  if (status === "uploaded" || status === "completed") {
+    return "status status-success";
+  }
+
+  if (status === "expired" || status === "canceled" || status === "failed") {
+    return "status status-warning";
+  }
+
+  return "status";
 }
 
 function formatEmpty(value: string | null | undefined) {
@@ -42,6 +55,10 @@ function hasActiveRequestedRequest(requests: FileReuploadRequestRecord[]) {
     !request.used_at &&
     new Date(request.expires_at).getTime() > now
   ));
+}
+
+function getShortFileId(fileId: string) {
+  return fileId.length > 12 ? `${fileId.slice(0, 8)}...` : fileId;
 }
 
 export function ReuploadLinkCreatePanel({
@@ -59,6 +76,10 @@ export function ReuploadLinkCreatePanel({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const hasActiveRequest = useMemo(() => hasActiveRequestedRequest(requests), [requests]);
+  const completedReuploadRequests = useMemo(
+    () => requests.filter((request) => request.status === "uploaded" && request.new_file_id),
+    [requests]
+  );
 
   async function copyText(value: string, successMessage: string) {
     if (!value) {
@@ -121,7 +142,7 @@ export function ReuploadLinkCreatePanel({
       </p>
       {hasActiveRequest ? (
         <div className="notice" style={{ marginTop: 12 }}>
-          기존 유효 요청이 있습니다. 이번 단계에서는 새 요청 생성을 허용하지만, 고객에게 전달할 최신 링크를 확인해 주세요.
+          기존 유효 요청이 있습니다. 이번 단계에서는 요청 생성을 허용하지만, 고객에게 전달할 최신 링크를 확인해 주세요.
         </div>
       ) : null}
       <div className="grid grid-3" style={{ marginTop: 12 }}>
@@ -179,7 +200,7 @@ export function ReuploadLinkCreatePanel({
             onClick={() => copyText(generatedUrl, "재업로드 링크가 복사되었습니다.")}
             type="button"
           >
-            생성 후 링크 복사
+            생성된 링크 복사
           </button>
         </div>
       ) : null}
@@ -199,13 +220,34 @@ export function ReuploadLinkCreatePanel({
             style={{ marginTop: 8 }}
             type="button"
           >
-            생성 후 안내문 복사
+            생성된 안내문 복사
           </button>
         </div>
       ) : null}
 
       <div style={{ marginTop: 18 }}>
         <h3>재업로드 요청 이력</h3>
+
+        {completedReuploadRequests.length ? (
+          <div className="notice" style={{ marginTop: 12, marginBottom: 12 }}>
+            <p style={{ marginBottom: 8 }}>
+              이 파일은 재업로드 요청을 통해 새 파일이 등록되었습니다. 새 파일은 별도 파일로 저장되며,
+              기존 파일은 자동 삭제/자동 교체되지 않습니다.
+            </p>
+            <ul style={{ marginBottom: 8 }}>
+              {completedReuploadRequests.map((request) => (
+                <li key={request.id}>
+                  새 파일 ID: <code>{request.new_file_id}</code>
+                </li>
+              ))}
+            </ul>
+            <p style={{ marginBottom: 0 }}>
+              새 파일을 다운로드하여 확인한 뒤, 필요하면 새 파일 상태를 “파일 확인 중” 또는 “파일 확인 완료”로 직접 변경하세요.
+              기존 파일을 교체 처리하려면 관리자가 직접 기존 파일 상태를 “새 파일로 교체됨”으로 변경하세요.
+            </p>
+          </div>
+        ) : null}
+
         {requests.length ? (
           <div className="table-wrap">
             <table>
@@ -217,6 +259,7 @@ export function ReuploadLinkCreatePanel({
                   <th>만료일시</th>
                   <th>사용일시</th>
                   <th>새 파일 ID</th>
+                  <th>새 파일 처리</th>
                   <th>생성자</th>
                 </tr>
               </thead>
@@ -224,11 +267,46 @@ export function ReuploadLinkCreatePanel({
                 {requests.map((request) => (
                   <tr key={request.id}>
                     <td>{request.created_at}</td>
-                    <td><span className="status">{formatStatus(request.status)}</span></td>
+                    <td>
+                      <span className={getStatusClassName(request.status)}>{formatStatus(request.status)}</span>
+                    </td>
                     <td>{formatEmpty(request.reason)}</td>
                     <td>{request.expires_at}</td>
                     <td>{formatEmpty(request.used_at)}</td>
-                    <td>{formatEmpty(request.new_file_id)}</td>
+                    <td>
+                      {request.new_file_id ? (
+                        <code title={request.new_file_id}>{getShortFileId(request.new_file_id)}</code>
+                      ) : (
+                        "-"
+                      )}
+                    </td>
+                    <td>
+                      {request.new_file_id ? (
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                          <button
+                            className="button secondary button-small"
+                            onClick={() => copyText(request.new_file_id!, "새 파일 ID가 복사되었습니다.")}
+                            type="button"
+                          >
+                            새 파일 ID 복사
+                          </button>
+                          <a
+                            className="button secondary button-small"
+                            href={`/admin?file_id=${encodeURIComponent(request.new_file_id)}`}
+                          >
+                            새 파일 상세 보기
+                          </a>
+                          <AdminDownloadLink
+                            className="button secondary button-small"
+                            href={`/api/files/download?file_id=${encodeURIComponent(request.new_file_id)}`}
+                          >
+                            새 파일 다운로드
+                          </AdminDownloadLink>
+                        </div>
+                      ) : (
+                        "-"
+                      )}
+                    </td>
                     <td>{formatEmpty(request.created_by)}</td>
                   </tr>
                 ))}

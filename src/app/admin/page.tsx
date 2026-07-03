@@ -48,6 +48,7 @@ import {
 } from "@/lib/files/proof-confirmation-service";
 import {
   listFileReuploadRequestsByOriginalFileId,
+  listFileReuploadRequestsByNewFileId,
   type FileReuploadRequestRecord
 } from "@/lib/files/reupload-request-service";
 import { FILE_STATUS_OPTIONS, getFileStatusLabel, isKnownFileStatus } from "@/lib/files/file-status";
@@ -72,6 +73,7 @@ type FileLookupState = {
   orderLinkLogs: FileOrderLinkLogRecord[];
   proofConfirmations: ProofConfirmationRecord[];
   reuploadRequests: FileReuploadRequestRecord[];
+  reuploadSourceRequests: FileReuploadRequestRecord[];
   message: string | null;
   status: "idle" | "found" | "not_found" | "empty" | "error";
 };
@@ -558,6 +560,7 @@ async function lookupFileById(rawFileId: string, shouldSearch: boolean): Promise
       orderLinkLogs: [],
       proofConfirmations: [],
       reuploadRequests: [],
+      reuploadSourceRequests: [],
       message: null,
       status: "idle"
     };
@@ -572,6 +575,7 @@ async function lookupFileById(rawFileId: string, shouldSearch: boolean): Promise
       orderLinkLogs: [],
       proofConfirmations: [],
       reuploadRequests: [],
+      reuploadSourceRequests: [],
       message: "file_id를 입력해 주세요.",
       status: "empty"
     };
@@ -589,17 +593,26 @@ async function lookupFileById(rawFileId: string, shouldSearch: boolean): Promise
         orderLinkLogs: [],
         proofConfirmations: [],
         reuploadRequests: [],
+        reuploadSourceRequests: [],
         message: "해당 file_id의 업로드 파일을 찾지 못했습니다.",
         status: "not_found"
       };
     }
 
-    const [downloadLogs, statusLogs, orderLinkLogs, proofConfirmations, reuploadRequests] = await Promise.all([
+    const [
+      downloadLogs,
+      statusLogs,
+      orderLinkLogs,
+      proofConfirmations,
+      reuploadRequests,
+      reuploadSourceRequests
+    ] = await Promise.all([
       listFileDownloadLogs(file.id, 5),
       listFileStatusChangeLogs(file.id, 10),
       listFileOrderLinkLogs(file.id, 5),
       listProofConfirmationsByFileId(file.id, 10),
-      listFileReuploadRequestsByOriginalFileId(file.id, 10)
+      listFileReuploadRequestsByOriginalFileId(file.id, 10),
+      listFileReuploadRequestsByNewFileId(file.id, 10)
     ]);
     return {
       query,
@@ -609,6 +622,7 @@ async function lookupFileById(rawFileId: string, shouldSearch: boolean): Promise
       orderLinkLogs,
       proofConfirmations,
       reuploadRequests,
+      reuploadSourceRequests,
       message: null,
       status: "found"
     };
@@ -621,6 +635,7 @@ async function lookupFileById(rawFileId: string, shouldSearch: boolean): Promise
       orderLinkLogs: [],
       proofConfirmations: [],
       reuploadRequests: [],
+      reuploadSourceRequests: [],
       message: error instanceof Error ? error.message : "파일 조회에 실패했습니다.",
       status: "error"
     };
@@ -867,6 +882,53 @@ function DownloadPanel({ file }: { file: UploadedFileRecord }) {
       ) : (
         <p style={{ marginBottom: 0 }}>다운로드에 필요한 저장소 정보가 아직 충분하지 않습니다.</p>
       )}
+    </div>
+  );
+}
+
+function ReuploadSourceNotice({ requests }: { requests: FileReuploadRequestRecord[] }) {
+  if (!requests.length) {
+    return null;
+  }
+
+  return (
+    <div className="notice" style={{ marginTop: 16 }}>
+      <h3 style={{ marginTop: 0 }}>재업로드 등록 파일</h3>
+      <p>
+        이 파일은 고객 재업로드 링크를 통해 새로 등록된 파일입니다. 원본 파일은 자동 삭제/자동 교체되지 않으며,
+        기존 파일 상태 변경은 관리자가 직접 처리해야 합니다.
+      </p>
+      <div className="table-wrap" style={{ marginTop: 12 }}>
+        <table>
+          <thead>
+            <tr>
+              <th>요청일시</th>
+              <th>원본 파일 ID</th>
+              <th>주문번호</th>
+              <th>사유</th>
+              <th>원본 파일 보기</th>
+            </tr>
+          </thead>
+          <tbody>
+            {requests.map((request) => (
+              <tr key={request.id}>
+                <td>{request.created_at}</td>
+                <td><code>{request.original_file_id}</code></td>
+                <td>{formatEmpty(request.order_id, "미연결")}</td>
+                <td>{formatEmpty(request.reason)}</td>
+                <td>
+                  <a
+                    className="button secondary button-small"
+                    href={`/admin?file_id=${encodeURIComponent(request.original_file_id)}`}
+                  >
+                    원본 파일 상세 보기
+                  </a>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -1970,6 +2032,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
               <FileLookupField label="created_at" value={data.fileLookup.file.created_at} />
               <FileLookupField label="updated_at" value={data.fileLookup.file.updated_at} />
             </div>
+            <ReuploadSourceNotice requests={data.fileLookup.reuploadSourceRequests} />
             <OrderLinkPanel file={data.fileLookup.file} message={orderLinkMessage} />
             <OrderLinkLogPanel logs={data.fileLookup.orderLinkLogs} />
             <AdminFileStatusForm fileId={data.fileLookup.file.id} currentStatus={data.fileLookup.file.status} />

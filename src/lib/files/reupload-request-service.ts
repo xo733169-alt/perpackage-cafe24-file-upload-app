@@ -570,3 +570,34 @@ export async function listFileReuploadRequestsByOriginalFileId(
 
   return (data ?? []) as unknown as FileReuploadRequestRecord[];
 }
+
+export async function listFileReuploadRequestsByNewFileId(
+  fileId: string,
+  limit = 10
+): Promise<FileReuploadRequestRecord[]> {
+  const trimmedFileId = fileId.trim();
+  if (!trimmedFileId) {
+    return [];
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("file_reupload_requests")
+    .select(REUPLOAD_REQUEST_SELECT)
+    .eq("new_file_id", trimmedFileId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    console.error("file_reupload_source_requests_load_failed", {
+      code: error.code ?? null,
+      message: sanitizeErrorMessage(error.message),
+      details: sanitizeErrorMessage(error.details),
+      hint: sanitizeErrorMessage(error.hint),
+      fileId: trimmedFileId
+    });
+    return [];
+  }
+
+  return (data ?? []) as unknown as FileReuploadRequestRecord[];
+}
