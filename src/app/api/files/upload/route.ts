@@ -101,8 +101,7 @@ export async function POST(request: NextRequest) {
         file_size: uploaded.file_size,
         mime_type: uploaded.mime_type,
         status: uploaded.status,
-        storage_provider: uploaded.storage_provider,
-        storage_path: uploaded.storage_path
+        created_at: uploaded.created_at
       }
     });
   } catch (error) {

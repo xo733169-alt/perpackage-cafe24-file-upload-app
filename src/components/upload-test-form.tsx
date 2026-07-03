@@ -11,8 +11,7 @@ type UploadResult = {
     file_size: number;
     mime_type: string;
     status: string;
-    storage_provider: string;
-    storage_path: string;
+    created_at: string;
   };
 };
 

@@ -327,6 +327,10 @@ function getWebhookEventTypeLabel(eventType: string) {
   return WEBHOOK_EVENT_TYPE_LABELS[eventType] ?? eventType;
 }
 
+function getInternalStorageDisplay(file: UploadedFileRecord) {
+  return file.storage_bucket && file.storage_path ? "숨김 처리" : null;
+}
+
 function getWebhookStatusFilter(value: string): Cafe24WebhookStatusFilter {
   return WEBHOOK_STATUS_FILTER_OPTIONS.some((option) => option.value === value)
     ? (value as Cafe24WebhookStatusFilter)
@@ -1635,8 +1639,7 @@ function OrderFileResultCard({
         <FileLookupField label="file_size" value={file.file_size} />
         <FileLookupField label="mime_type" value={file.mime_type} />
         <FileLookupField label="status" value={file.status} />
-        <FileLookupField label="storage_bucket" value={file.storage_bucket} />
-        <FileLookupField label="storage_path" value={file.storage_path} />
+        <FileLookupField label="내부 저장 정보" value={getInternalStorageDisplay(file)} emptyText="저장 정보 없음" />
         <FileLookupField label="created_at" value={file.created_at} />
         <FileLookupField label="updated_at" value={file.updated_at} />
       </div>
@@ -1945,8 +1948,11 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
               <FileLookupField label="file_size" value={data.fileLookup.file.file_size} />
               <FileLookupField label="mime_type" value={data.fileLookup.file.mime_type} />
               <FileLookupField label="storage_provider" value={data.fileLookup.file.storage_provider} />
-              <FileLookupField label="storage_bucket" value={data.fileLookup.file.storage_bucket} />
-              <FileLookupField label="storage_path" value={data.fileLookup.file.storage_path} />
+              <FileLookupField
+                label="내부 저장 정보"
+                value={getInternalStorageDisplay(data.fileLookup.file)}
+                emptyText="저장 정보 없음"
+              />
               <FileLookupField label="status" value={data.fileLookup.file.status} />
               <FileLookupField label="order_id" value={data.fileLookup.file.order_id} emptyText="미연결" />
               <FileLookupField label="inquiry_id" value={data.fileLookup.file.inquiry_id} emptyText="미연결" />
