@@ -1,7 +1,9 @@
 import { createHash, randomBytes } from "crypto";
+import { nanoid } from "nanoid";
 import { getFileById } from "@/lib/files/file-service";
 import type { UploadedFileRecord } from "@/lib/files/types";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { uploadToNaverObjectStorage } from "@/lib/storage/naver-object-storage";
 
 export type FileReuploadRequestStatus =
   | "requested"
@@ -38,6 +40,30 @@ export type CreateFileReuploadRequestInput = {
   createdBy?: string | null;
 };
 
+export type ReuploadRequestLookupResult =
+  | {
+      state: "valid";
+      request: FileReuploadRequestRecord;
+      originalFile: UploadedFileRecord;
+    }
+  | {
+      state: "missing_token" | "invalid" | "expired" | "used" | "canceled" | "failed";
+      request?: FileReuploadRequestRecord;
+      originalFile?: UploadedFileRecord | null;
+    };
+
+export type CompleteReuploadRequestInput = {
+  rawToken: string;
+  file: File;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+};
+
+export type CompleteReuploadRequestResult = {
+  request: FileReuploadRequestRecord;
+  file: Pick<UploadedFileRecord, "id" | "original_filename" | "file_size" | "mime_type" | "status" | "created_at">;
+};
+
 const REUPLOAD_REQUEST_SELECT = [
   "id",
   "original_file_id",
@@ -67,6 +93,33 @@ const REUPLOAD_STATUS_LABELS: Record<FileReuploadRequestStatus, string> = {
   failed: "처리 실패"
 };
 
+const REUPLOAD_ALLOWED_EXTENSIONS = new Set([
+  ".ai",
+  ".pdf",
+  ".eps",
+  ".zip",
+  ".jpg",
+  ".jpeg",
+  ".png",
+  ".psd"
+]);
+
+const REUPLOAD_BLOCKED_EXTENSIONS = new Set([
+  ".exe",
+  ".bat",
+  ".cmd",
+  ".sh",
+  ".js",
+  ".msi",
+  ".dll",
+  ".php",
+  ".html",
+  ".htm"
+]);
+
+const DEFAULT_UPLOAD_MAX_FILE_SIZE_MB = 10;
+const STORAGE_PROVIDER = "naver-object-storage";
+
 function sanitizeText(value?: string | null, maxLength = 1000) {
   if (!value) {
     return null;
@@ -79,6 +132,54 @@ function sanitizeErrorMessage(message?: string | null) {
   return sanitizeText(message, 300);
 }
 
+function sanitizeFilename(filename: string) {
+  const normalized = filename.normalize("NFKC").replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, " ").trim();
+  return normalized || "reupload-file";
+}
+
+function getExtension(filename: string) {
+  const index = filename.lastIndexOf(".");
+  if (index === -1) return "";
+  return filename.slice(index).toLowerCase();
+}
+
+function getUploadLimitBytes() {
+  const mb = Number(process.env.UPLOAD_MAX_FILE_SIZE_MB ?? DEFAULT_UPLOAD_MAX_FILE_SIZE_MB);
+  const safeMb = Number.isFinite(mb) && mb > 0 ? mb : DEFAULT_UPLOAD_MAX_FILE_SIZE_MB;
+  return safeMb * 1024 * 1024;
+}
+
+function assertAllowedReuploadFile(file: File) {
+  if (file.size <= 0) {
+    throw new Error("비어 있는 파일은 업로드할 수 없습니다.");
+  }
+
+  if (file.size > getUploadLimitBytes()) {
+    throw new Error("파일 용량이 현재 업로드 제한을 초과했습니다.");
+  }
+
+  const extension = getExtension(file.name);
+  if (REUPLOAD_BLOCKED_EXTENSIONS.has(extension)) {
+    throw new Error("보안상 업로드할 수 없는 파일 형식입니다.");
+  }
+
+  if (!REUPLOAD_ALLOWED_EXTENSIONS.has(extension)) {
+    throw new Error("AI, PDF, EPS, ZIP, JPG, PNG, PSD 파일만 업로드할 수 있습니다.");
+  }
+}
+
+function buildReuploadStoragePath(input: {
+  mallId?: string | null;
+  productNo?: string | null;
+  requestId: string;
+  storedFilename: string;
+}) {
+  const mallId = input.mallId?.trim() || "unknown-mall";
+  const productNo = input.productNo?.trim() || "unknown-product";
+  const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  return `cafe24-reuploads/${mallId}/${productNo}/${date}/${input.requestId}/${input.storedFilename}`;
+}
+
 export function getFileReuploadRequestStatusLabel(status: string | null | undefined) {
   return REUPLOAD_STATUS_LABELS[status as FileReuploadRequestStatus] ?? status ?? "-";
 }
@@ -89,6 +190,244 @@ export function createRawReuploadToken() {
 
 export function hashReuploadToken(rawToken: string) {
   return createHash("sha256").update(rawToken).digest("hex");
+}
+
+async function getReuploadRequestByTokenHash(tokenHash: string) {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("file_reupload_requests")
+    .select(REUPLOAD_REQUEST_SELECT)
+    .eq("token_hash", tokenHash)
+    .maybeSingle();
+
+  if (error) {
+    console.error("file_reupload_request_token_lookup_failed", {
+      code: error.code ?? null,
+      message: sanitizeErrorMessage(error.message),
+      details: sanitizeErrorMessage(error.details),
+      hint: sanitizeErrorMessage(error.hint)
+    });
+    throw new Error("Failed to load file reupload request.");
+  }
+
+  return data ? (data as unknown as FileReuploadRequestRecord) : null;
+}
+
+function getRequestUnavailableState(request: FileReuploadRequestRecord): Exclude<ReuploadRequestLookupResult["state"], "valid" | "missing_token"> | null {
+  if (request.status === "canceled") {
+    return "canceled";
+  }
+
+  if (request.status === "failed") {
+    return "failed";
+  }
+
+  if (request.used_at || request.status === "uploaded" || request.status === "reviewing" || request.status === "completed") {
+    return "used";
+  }
+
+  if (new Date(request.expires_at).getTime() <= Date.now() || request.status === "expired") {
+    return "expired";
+  }
+
+  if (request.status !== "requested") {
+    return "invalid";
+  }
+
+  return null;
+}
+
+export async function lookupReuploadRequestByRawToken(rawToken?: string | null): Promise<ReuploadRequestLookupResult> {
+  const token = rawToken?.trim();
+  if (!token) {
+    return { state: "missing_token" };
+  }
+
+  const request = await getReuploadRequestByTokenHash(hashReuploadToken(token));
+  if (!request) {
+    return { state: "invalid" };
+  }
+
+  const unavailableState = getRequestUnavailableState(request);
+  if (unavailableState) {
+    return { state: unavailableState, request };
+  }
+
+  const originalFile = await getFileById(request.original_file_id);
+  if (!originalFile) {
+    return { state: "invalid", request, originalFile };
+  }
+
+  return {
+    state: "valid",
+    request,
+    originalFile
+  };
+}
+
+async function createReuploadedFile(input: {
+  request: FileReuploadRequestRecord;
+  originalFile: UploadedFileRecord;
+  file: File;
+}) {
+  assertAllowedReuploadFile(input.file);
+
+  const originalFilename = sanitizeFilename(input.file.name);
+  const storedFilename = `${Date.now()}-${nanoid(10)}${getExtension(originalFilename)}`;
+  const storagePath = buildReuploadStoragePath({
+    mallId: input.originalFile.mall_id,
+    productNo: input.originalFile.product_no,
+    requestId: input.request.id,
+    storedFilename
+  });
+  const buffer = Buffer.from(await input.file.arrayBuffer());
+  const uploaded = await uploadToNaverObjectStorage({
+    key: storagePath,
+    body: buffer,
+    contentType: input.file.type || "application/octet-stream"
+  });
+  const now = new Date().toISOString();
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("files")
+    .insert({
+      mall_id: input.originalFile.mall_id,
+      shop_no: input.originalFile.shop_no,
+      product_no: input.originalFile.product_no,
+      variant_code: input.originalFile.variant_code,
+      customer_type: "cafe24-reupload",
+      customer_identifier: input.originalFile.customer_identifier,
+      original_filename: originalFilename,
+      stored_filename: storedFilename,
+      file_size: input.file.size,
+      mime_type: input.file.type || "application/octet-stream",
+      storage_provider: STORAGE_PROVIDER,
+      storage_bucket: uploaded.bucket,
+      storage_path: uploaded.path,
+      public_preview_url: null,
+      secure_download_url: null,
+      order_id: input.request.order_id,
+      inquiry_id: input.originalFile.inquiry_id,
+      status: "uploaded_pending",
+      created_at: now,
+      updated_at: now
+    })
+    .select("*")
+    .single();
+
+  if (error) {
+    console.error("file_reupload_file_insert_failed", {
+      code: error.code ?? null,
+      message: sanitizeErrorMessage(error.message),
+      details: sanitizeErrorMessage(error.details),
+      hint: sanitizeErrorMessage(error.hint),
+      requestId: input.request.id,
+      originalFileId: input.originalFile.id
+    });
+    throw new Error("재업로드 파일 정보를 저장하지 못했습니다.");
+  }
+
+  return data as UploadedFileRecord;
+}
+
+async function markReuploadAttemptFailed(input: {
+  request: FileReuploadRequestRecord;
+  message: string;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+}) {
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase
+    .from("file_reupload_requests")
+    .update({
+      upload_attempt_count: (input.request.upload_attempt_count ?? 0) + 1,
+      last_error_message: sanitizeErrorMessage(input.message),
+      customer_ip: sanitizeText(input.ipAddress, 120),
+      customer_user_agent: sanitizeText(input.userAgent, 500),
+      updated_at: new Date().toISOString()
+    })
+    .eq("id", input.request.id);
+
+  if (error) {
+    console.warn("file_reupload_request_failed_attempt_update_failed", {
+      code: error.code ?? null,
+      message: sanitizeErrorMessage(error.message),
+      details: sanitizeErrorMessage(error.details),
+      hint: sanitizeErrorMessage(error.hint),
+      requestId: input.request.id
+    });
+  }
+}
+
+export async function completeFileReuploadRequest(input: CompleteReuploadRequestInput): Promise<CompleteReuploadRequestResult> {
+  const lookup = await lookupReuploadRequestByRawToken(input.rawToken);
+  if (lookup.state !== "valid") {
+    throw new Error("유효하지 않거나 사용할 수 없는 재업로드 링크입니다.");
+  }
+
+  try {
+    const uploadedFile = await createReuploadedFile({
+      request: lookup.request,
+      originalFile: lookup.originalFile,
+      file: input.file
+    });
+
+    const now = new Date().toISOString();
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from("file_reupload_requests")
+      .update({
+        new_file_id: uploadedFile.id,
+        status: "uploaded" satisfies FileReuploadRequestStatus,
+        used_at: now,
+        updated_at: now,
+        customer_ip: sanitizeText(input.ipAddress, 120),
+        customer_user_agent: sanitizeText(input.userAgent, 500),
+        upload_attempt_count: (lookup.request.upload_attempt_count ?? 0) + 1,
+        last_error_message: null
+      })
+      .eq("id", lookup.request.id)
+      .eq("status", "requested")
+      .is("used_at", null)
+      .select(REUPLOAD_REQUEST_SELECT)
+      .maybeSingle();
+
+    if (error) {
+      console.error("file_reupload_request_complete_failed", {
+        code: error.code ?? null,
+        message: sanitizeErrorMessage(error.message),
+        details: sanitizeErrorMessage(error.details),
+        hint: sanitizeErrorMessage(error.hint),
+        requestId: lookup.request.id,
+        newFileId: uploadedFile.id
+      });
+      throw new Error("재업로드 요청 상태를 갱신하지 못했습니다.");
+    }
+
+    if (!data) {
+      throw new Error("이미 처리된 재업로드 요청입니다.");
+    }
+
+    return {
+      request: data as unknown as FileReuploadRequestRecord,
+      file: {
+        id: uploadedFile.id,
+        original_filename: uploadedFile.original_filename,
+        file_size: uploadedFile.file_size,
+        mime_type: uploadedFile.mime_type,
+        status: uploadedFile.status,
+        created_at: uploadedFile.created_at
+      }
+    };
+  } catch (error) {
+    await markReuploadAttemptFailed({
+      request: lookup.request,
+      message: error instanceof Error ? error.message : "Unknown reupload error",
+      ipAddress: input.ipAddress,
+      userAgent: input.userAgent
+    });
+    throw error;
+  }
 }
 
 export function buildReuploadRequestMessage(input: {
