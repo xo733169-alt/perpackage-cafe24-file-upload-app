@@ -4,7 +4,10 @@ import { uploadFile } from "@/lib/files/file-service";
 const allowedUploadOrigins = new Set([
   "https://peerl.cafe24.com",
   "https://www.peerl.cafe24.com",
-  "https://perpackage-cafe24-file-upload-app.vercel.app"
+  "https://perpackage-cafe24-file-upload-app.vercel.app",
+  // 페르패키지 전개도 디자인 에디터(카페24 파일업로더 standalone 페이지)에서
+  // 완성 디자인 SVG를 업로드해 업로드 파일 ID를 발급받기 위한 origin
+  "https://ecimg.cafe24img.com"
 ]);
 
 function getAllowedOrigin(request: NextRequest) {
