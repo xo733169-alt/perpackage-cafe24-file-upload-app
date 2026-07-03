@@ -5,6 +5,7 @@ import {
   logoutAdminAction,
   updateProofConfirmationStatusAction
 } from "@/app/admin/actions";
+import { AdminDownloadLink, AdminRefreshButton } from "@/components/AdminDownloadLogRefreshControls";
 import { AdminFileStatusForm } from "@/components/AdminFileStatusForm";
 import { CopyFileIdButton } from "@/components/CopyFileIdButton";
 import { ProofConfirmationMessagePanel } from "@/components/ProofConfirmationMessagePanel";
@@ -845,14 +846,12 @@ function DownloadPanel({ file }: { file: UploadedFileRecord }) {
     <div className="notice" style={{ marginTop: 16 }}>
       <p style={{ marginTop: 0 }}>다운로드 링크는 짧은 시간 동안만 유효합니다.</p>
       {canDownload ? (
-        <a
+        <AdminDownloadLink
           className="button"
           href={`/api/files/download?file_id=${encodeURIComponent(file.id)}`}
-          rel="noreferrer"
-          target="_blank"
         >
           파일 다운로드
-        </a>
+        </AdminDownloadLink>
       ) : (
         <p style={{ marginBottom: 0 }}>다운로드에 필요한 저장소 정보가 아직 충분하지 않습니다.</p>
       )}
@@ -2056,14 +2055,12 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                   <td><span className="status">{getFileStatusLabel(file.status)}</span></td>
                   <td>{file.created_at}</td>
                   <td>
-                    <a
+                    <AdminDownloadLink
                       className="button secondary button-small"
                       href={`/api/files/download?file_id=${encodeURIComponent(file.id)}`}
-                      rel="noreferrer"
-                      target="_blank"
                     >
                       다운로드
-                    </a>
+                    </AdminDownloadLink>
                   </td>
                   <td>
                     <AdminFileStatusForm fileId={file.id} currentStatus={file.status} variant="compact" />
@@ -2139,6 +2136,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button className="button" type="submit">필터 적용</button>
+            <AdminRefreshButton />
             <a className="button secondary" href="/admin">초기화</a>
             <a className="button secondary" href={downloadLogsExportHref}>CSV 다운로드</a>
           </div>
