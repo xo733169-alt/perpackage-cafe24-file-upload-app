@@ -4,6 +4,9 @@ import {
   type ReuploadRequestLookupResult
 } from "@/lib/files/reupload-request-service";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 type ReuploadPageProps = {
   searchParams?: {
     token?: string | string[];
@@ -55,8 +58,8 @@ function getUnavailableMessage(result: Exclude<ReuploadRequestLookupResult, { st
       };
     case "used":
       return {
-        title: "이미 사용된 재업로드 링크입니다.",
-        body: "수정 파일이 이미 접수된 링크입니다. 추가 재업로드가 필요하면 담당자에게 문의해 주세요."
+        title: "이미 재업로드가 완료된 링크입니다.",
+        body: "수정 파일이 이미 접수되었습니다. 추가 재업로드가 필요하면 담당자에게 문의해 주세요."
       };
     case "canceled":
       return {

@@ -222,7 +222,13 @@ function getRequestUnavailableState(request: FileReuploadRequestRecord): Exclude
     return "failed";
   }
 
-  if (request.used_at || request.status === "uploaded" || request.status === "reviewing" || request.status === "completed") {
+  if (
+    request.new_file_id ||
+    request.used_at ||
+    request.status === "uploaded" ||
+    request.status === "reviewing" ||
+    request.status === "completed"
+  ) {
     return "used";
   }
 
@@ -388,6 +394,7 @@ export async function completeFileReuploadRequest(input: CompleteReuploadRequest
       })
       .eq("id", lookup.request.id)
       .eq("status", "requested")
+      .is("new_file_id", null)
       .is("used_at", null)
       .select(REUPLOAD_REQUEST_SELECT)
       .maybeSingle();
