@@ -9,6 +9,7 @@ import { AdminDownloadLink, AdminRefreshButton } from "@/components/AdminDownloa
 import { AdminFileStatusForm } from "@/components/AdminFileStatusForm";
 import { CopyFileIdButton } from "@/components/CopyFileIdButton";
 import { ProofConfirmationMessagePanel } from "@/components/ProofConfirmationMessagePanel";
+import { ReuploadLinkCreatePanel } from "@/components/ReuploadLinkCreatePanel";
 import { ReuploadRequestMessagePanel } from "@/components/ReuploadRequestMessagePanel";
 import { getAdminAuthConfigStatus, isAdminAuthenticated } from "@/lib/admin/auth";
 import { getCafe24ConfigStatus } from "@/lib/cafe24/config";
@@ -45,6 +46,10 @@ import {
   type ProofConfirmationStatusFilter,
   type ProofConfirmationRecord
 } from "@/lib/files/proof-confirmation-service";
+import {
+  listFileReuploadRequestsByOriginalFileId,
+  type FileReuploadRequestRecord
+} from "@/lib/files/reupload-request-service";
 import { FILE_STATUS_OPTIONS, getFileStatusLabel, isKnownFileStatus } from "@/lib/files/file-status";
 import {
   getFileById,
@@ -66,6 +71,7 @@ type FileLookupState = {
   statusLogs: FileStatusChangeLogRecord[];
   orderLinkLogs: FileOrderLinkLogRecord[];
   proofConfirmations: ProofConfirmationRecord[];
+  reuploadRequests: FileReuploadRequestRecord[];
   message: string | null;
   status: "idle" | "found" | "not_found" | "empty" | "error";
 };
@@ -551,6 +557,7 @@ async function lookupFileById(rawFileId: string, shouldSearch: boolean): Promise
       statusLogs: [],
       orderLinkLogs: [],
       proofConfirmations: [],
+      reuploadRequests: [],
       message: null,
       status: "idle"
     };
@@ -564,6 +571,7 @@ async function lookupFileById(rawFileId: string, shouldSearch: boolean): Promise
       statusLogs: [],
       orderLinkLogs: [],
       proofConfirmations: [],
+      reuploadRequests: [],
       message: "file_id를 입력해 주세요.",
       status: "empty"
     };
@@ -580,16 +588,18 @@ async function lookupFileById(rawFileId: string, shouldSearch: boolean): Promise
         statusLogs: [],
         orderLinkLogs: [],
         proofConfirmations: [],
+        reuploadRequests: [],
         message: "해당 file_id의 업로드 파일을 찾지 못했습니다.",
         status: "not_found"
       };
     }
 
-    const [downloadLogs, statusLogs, orderLinkLogs, proofConfirmations] = await Promise.all([
+    const [downloadLogs, statusLogs, orderLinkLogs, proofConfirmations, reuploadRequests] = await Promise.all([
       listFileDownloadLogs(file.id, 5),
       listFileStatusChangeLogs(file.id, 10),
       listFileOrderLinkLogs(file.id, 5),
-      listProofConfirmationsByFileId(file.id, 10)
+      listProofConfirmationsByFileId(file.id, 10),
+      listFileReuploadRequestsByOriginalFileId(file.id, 10)
     ]);
     return {
       query,
@@ -598,6 +608,7 @@ async function lookupFileById(rawFileId: string, shouldSearch: boolean): Promise
       statusLogs,
       orderLinkLogs,
       proofConfirmations,
+      reuploadRequests,
       message: null,
       status: "found"
     };
@@ -609,6 +620,7 @@ async function lookupFileById(rawFileId: string, shouldSearch: boolean): Promise
       statusLogs: [],
       orderLinkLogs: [],
       proofConfirmations: [],
+      reuploadRequests: [],
       message: error instanceof Error ? error.message : "파일 조회에 실패했습니다.",
       status: "error"
     };
@@ -1964,6 +1976,12 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
             <ReuploadRequestMessagePanel
               currentStatus={data.fileLookup.file.status}
               fileId={data.fileLookup.file.id}
+              orderId={data.fileLookup.file.order_id}
+              originalFilename={data.fileLookup.file.original_filename}
+            />
+            <ReuploadLinkCreatePanel
+              fileId={data.fileLookup.file.id}
+              initialRequests={data.fileLookup.reuploadRequests}
               orderId={data.fileLookup.file.order_id}
               originalFilename={data.fileLookup.file.original_filename}
             />

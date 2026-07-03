@@ -1,0 +1,244 @@
+"use client";
+
+import { useMemo, useState, type FormEvent } from "react";
+import type { FileReuploadRequestRecord } from "@/lib/files/reupload-request-service";
+
+type ReuploadLinkCreatePanelProps = {
+  fileId: string;
+  originalFilename: string;
+  orderId: string | null;
+  initialRequests: FileReuploadRequestRecord[];
+};
+
+type CreateReuploadRequestResponse = {
+  ok: boolean;
+  message?: string;
+  reupload_url?: string;
+  request?: FileReuploadRequestRecord;
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  requested: "재업로드 요청",
+  uploaded: "고객 업로드 완료",
+  reviewing: "파일 확인 중",
+  completed: "처리 완료",
+  expired: "만료됨",
+  canceled: "요청 취소",
+  failed: "처리 실패"
+};
+
+function formatStatus(status: string) {
+  return STATUS_LABELS[status] ?? status;
+}
+
+function formatEmpty(value: string | null | undefined) {
+  return value?.trim() || "-";
+}
+
+function hasActiveRequestedRequest(requests: FileReuploadRequestRecord[]) {
+  const now = Date.now();
+  return requests.some((request) => (
+    request.status === "requested" &&
+    !request.used_at &&
+    new Date(request.expires_at).getTime() > now
+  ));
+}
+
+export function ReuploadLinkCreatePanel({
+  fileId,
+  originalFilename,
+  orderId,
+  initialRequests
+}: ReuploadLinkCreatePanelProps) {
+  const [reason, setReason] = useState("");
+  const [customerMessage, setCustomerMessage] = useState("");
+  const [requests, setRequests] = useState(initialRequests);
+  const [generatedUrl, setGeneratedUrl] = useState("");
+  const [generatedMessage, setGeneratedMessage] = useState("");
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const hasActiveRequest = useMemo(() => hasActiveRequestedRequest(requests), [requests]);
+
+  async function copyText(value: string, successMessage: string) {
+    if (!value) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(value);
+      setStatusMessage(successMessage);
+      setErrorMessage(null);
+    } catch {
+      setStatusMessage(null);
+      setErrorMessage("복사에 실패했습니다. 내용을 직접 선택해 복사해 주세요.");
+    }
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setIsSubmitting(true);
+    setStatusMessage(null);
+    setErrorMessage(null);
+    setGeneratedUrl("");
+    setGeneratedMessage("");
+
+    try {
+      const response = await fetch("/api/admin/reupload-requests", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          original_file_id: fileId,
+          reason,
+          customer_message: customerMessage
+        })
+      });
+      const result = await response.json() as CreateReuploadRequestResponse;
+
+      if (!response.ok || !result.ok || !result.request || !result.reupload_url || !result.message) {
+        throw new Error(result.message || "재업로드 링크 생성에 실패했습니다.");
+      }
+
+      setRequests((currentRequests) => [result.request!, ...currentRequests]);
+      setGeneratedUrl(result.reupload_url);
+      setGeneratedMessage(result.message);
+      setStatusMessage("재업로드 링크가 생성되었습니다.");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "재업로드 링크 생성에 실패했습니다.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="notice" style={{ marginTop: 16 }}>
+      <h3 style={{ marginTop: 0 }}>재업로드 링크 생성</h3>
+      <p>
+        고객에게 전달할 재업로드 요청 record와 7일 유효 링크를 생성합니다.
+        raw token은 생성 직후 링크에만 포함되며 DB에는 저장하지 않습니다.
+      </p>
+      {hasActiveRequest ? (
+        <div className="notice" style={{ marginTop: 12 }}>
+          기존 유효 요청이 있습니다. 이번 단계에서는 새 요청 생성을 허용하지만, 고객에게 전달할 최신 링크를 확인해 주세요.
+        </div>
+      ) : null}
+      <div className="grid grid-3" style={{ marginTop: 12 }}>
+        <div className="card">
+          <span>기존 파일명</span>
+          <strong>{originalFilename}</strong>
+        </div>
+        <div className="card">
+          <span>file_id</span>
+          <strong>{fileId}</strong>
+        </div>
+        <div className="card">
+          <span>주문번호</span>
+          <strong>{orderId ?? "미연결"}</strong>
+        </div>
+      </div>
+      <form className="form" onSubmit={handleSubmit} style={{ marginTop: 14 }}>
+        <div className="field">
+          <label htmlFor={`reupload_link_reason_${fileId}`}>재업로드 요청 사유</label>
+          <textarea
+            id={`reupload_link_reason_${fileId}`}
+            onChange={(event) => setReason(event.target.value)}
+            placeholder="예: 칼선 파일이 누락되어 수정 파일 재업로드가 필요합니다."
+            required
+            rows={3}
+            value={reason}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor={`reupload_link_customer_message_${fileId}`}>고객 안내 추가 문구</label>
+          <textarea
+            id={`reupload_link_customer_message_${fileId}`}
+            onChange={(event) => setCustomerMessage(event.target.value)}
+            placeholder="고객에게 추가로 안내할 내용이 있으면 입력하세요."
+            rows={3}
+            value={customerMessage}
+          />
+        </div>
+        <button className="button" disabled={isSubmitting} type="submit">
+          {isSubmitting ? "생성 중..." : "재업로드 링크 생성"}
+        </button>
+      </form>
+
+      {statusMessage ? <p style={{ marginBottom: 0 }}>{statusMessage}</p> : null}
+      {errorMessage ? <p style={{ color: "#b42318", marginBottom: 0 }}>{errorMessage}</p> : null}
+
+      {generatedUrl ? (
+        <div style={{ marginTop: 16 }}>
+          <div className="field">
+            <label htmlFor={`reupload_link_url_${fileId}`}>생성된 재업로드 링크</label>
+            <input id={`reupload_link_url_${fileId}`} readOnly value={generatedUrl} />
+          </div>
+          <button
+            className="button secondary"
+            onClick={() => copyText(generatedUrl, "재업로드 링크가 복사되었습니다.")}
+            type="button"
+          >
+            생성 후 링크 복사
+          </button>
+        </div>
+      ) : null}
+
+      {generatedMessage ? (
+        <div className="field" style={{ marginTop: 16 }}>
+          <label htmlFor={`reupload_link_message_${fileId}`}>고객 안내문</label>
+          <textarea
+            id={`reupload_link_message_${fileId}`}
+            readOnly
+            rows={14}
+            value={generatedMessage}
+          />
+          <button
+            className="button secondary"
+            onClick={() => copyText(generatedMessage, "재업로드 안내문이 복사되었습니다.")}
+            style={{ marginTop: 8 }}
+            type="button"
+          >
+            생성 후 안내문 복사
+          </button>
+        </div>
+      ) : null}
+
+      <div style={{ marginTop: 18 }}>
+        <h3>재업로드 요청 이력</h3>
+        {requests.length ? (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>요청일시</th>
+                  <th>상태</th>
+                  <th>사유</th>
+                  <th>만료일시</th>
+                  <th>사용일시</th>
+                  <th>새 파일 ID</th>
+                  <th>생성자</th>
+                </tr>
+              </thead>
+              <tbody>
+                {requests.map((request) => (
+                  <tr key={request.id}>
+                    <td>{request.created_at}</td>
+                    <td><span className="status">{formatStatus(request.status)}</span></td>
+                    <td>{formatEmpty(request.reason)}</td>
+                    <td>{request.expires_at}</td>
+                    <td>{formatEmpty(request.used_at)}</td>
+                    <td>{formatEmpty(request.new_file_id)}</td>
+                    <td>{formatEmpty(request.created_by)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p>아직 재업로드 요청 이력이 없습니다.</p>
+        )}
+      </div>
+    </div>
+  );
+}
