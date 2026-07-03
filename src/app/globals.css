@@ -144,6 +144,12 @@ h2 {
   gap: 16px;
 }
 
+.grid > *,
+.panel,
+.card {
+  min-width: 0;
+}
+
 .grid-2 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -243,7 +249,61 @@ h2 {
   color: var(--ink);
 }
 
+.admin-tabs-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.admin-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.admin-tab {
+  display: grid;
+  gap: 3px;
+  min-width: 150px;
+  flex: 1 1 150px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.admin-tab strong {
+  font-size: 14px;
+}
+
+.admin-tab span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.admin-tab-active {
+  border-color: var(--brand);
+  background: var(--brand);
+  color: #fff;
+}
+
+.admin-tab-active span {
+  color: rgba(255, 255, 255, .82);
+}
+
+.admin-action-card {
+  color: inherit;
+  text-decoration: none;
+}
+
+.admin-action-card:hover {
+  border-color: var(--brand);
+}
+
 .table-wrap {
+  max-width: 100%;
   overflow-x: auto;
   border: 1px solid var(--line);
   border-radius: 10px;

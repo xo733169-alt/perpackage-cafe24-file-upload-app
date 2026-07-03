@@ -292,7 +292,7 @@ export function ReuploadLinkCreatePanel({
                           </button>
                           <a
                             className="button secondary button-small"
-                            href={`/admin?file_id=${encodeURIComponent(request.new_file_id)}`}
+                            href={`/admin?tab=files&file_id=${encodeURIComponent(request.new_file_id)}`}
                           >
                             새 파일 상세 보기
                           </a>

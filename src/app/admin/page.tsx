@@ -124,6 +124,7 @@ type AdminPageProps = {
     proof_order_id?: string | string[];
     proof_start_date?: string | string[];
     proof_end_date?: string | string[];
+    tab?: string | string[];
   };
 };
 
@@ -150,6 +151,7 @@ function readParam(
     | "proof_order_id"
     | "proof_start_date"
     | "proof_end_date"
+    | "tab"
 ) {
   const value = searchParams?.[key];
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
@@ -355,15 +357,19 @@ const PROOF_STATUS_FILTER_OPTIONS: Array<{ value: ProofConfirmationStatusFilter;
   { value: "skipped", label: "교정확인 생략" }
 ];
 
-const ADMIN_QUICK_NAV_ITEMS = [
-  { href: "#cafe24-order-test", label: "주문 조회" },
-  { href: "#webhook-logs", label: "Webhook 로그" },
-  { href: "#proof-confirmation-logs", label: "교정확인 이력" },
-  { href: "#find-files-by-order", label: "주문번호 검색" },
-  { href: "#find-file-by-id", label: "파일 ID 검색" },
-  { href: "#recent-files", label: "최근 업로드" },
-  { href: "#download-logs", label: "다운로드 로그" }
-] as const;
+type AdminTab = "today" | "files" | "reupload" | "logs" | "settings";
+
+const ADMIN_TAB_ITEMS: Array<{ value: AdminTab; label: string; description: string }> = [
+  { value: "today", label: "오늘 처리", description: "최근 업로드와 오늘 확인할 작업" },
+  { value: "files", label: "파일 찾기", description: "주문번호, file_id 검색과 파일 처리" },
+  { value: "reupload", label: "재업로드", description: "재업로드 요청과 새 파일 확인" },
+  { value: "logs", label: "로그 확인", description: "Webhook, 다운로드, 교정확인 이력" },
+  { value: "settings", label: "설정", description: "앱 연동 상태와 OAuth 정보" }
+];
+
+function getAdminTab(value: string): AdminTab {
+  return ADMIN_TAB_ITEMS.some((item) => item.value === value) ? (value as AdminTab) : "today";
+}
 
 function getProofStatusClassName(status: string) {
   if (status === "requested") {
@@ -378,6 +384,7 @@ function getProofStatusClassName(status: string) {
 }
 
 type AdminPreservedQuery = {
+  tab: AdminTab;
   fileId: string;
   orderId: string;
   cafe24OrderId: string;
@@ -399,6 +406,7 @@ type AdminPreservedQuery = {
 function buildAdminHrefFromPreservedQuery(values: AdminPreservedQuery) {
   const params = new URLSearchParams();
 
+  params.set("tab", values.tab);
   if (values.fileId) params.set("file_id", values.fileId);
   if (values.orderId) params.set("order_id", values.orderId);
   if (values.cafe24OrderId) params.set("cafe24_order_id", values.cafe24OrderId);
@@ -431,6 +439,7 @@ function AdminPreservedQueryInputs({
 }) {
   return (
     <>
+      <input name="tab" type="hidden" value={values.tab} />
       {values.fileId ? <input name="file_id" type="hidden" value={values.fileId} /> : null}
       {values.orderId ? <input name="order_id" type="hidden" value={values.orderId} /> : null}
       {values.cafe24OrderId ? <input name="cafe24_order_id" type="hidden" value={values.cafe24OrderId} /> : null}
@@ -467,19 +476,79 @@ function AdminPreservedQueryInputs({
   );
 }
 
-function AdminQuickNav() {
+function AdminWorkflowTabs({
+  activeTab,
+  preservedQuery
+}: {
+  activeTab: AdminTab;
+  preservedQuery: AdminPreservedQuery;
+}) {
   return (
-    <section className="panel panel-pad" aria-labelledby="admin-quick-nav-title">
-      <h2 id="admin-quick-nav-title">빠른 이동</h2>
+    <section className="panel panel-pad admin-tabs-panel" aria-labelledby="admin-workflow-tabs-title">
+      <div>
+        <p className="eyebrow">WORKFLOW</p>
+        <h2 id="admin-workflow-tabs-title">관리자 업무 흐름</h2>
+        <p className="lead">
+          오늘 처리할 파일, 파일 검색, 재업로드, 로그 확인, 설정을 업무 흐름별로 나눠 확인합니다.
+        </p>
+      </div>
+      <nav className="admin-tabs" aria-label="관리자 업무 탭">
+        {ADMIN_TAB_ITEMS.map((item) => {
+          const href = buildAdminHrefFromPreservedQuery({ ...preservedQuery, tab: item.value });
+          const isActive = item.value === activeTab;
+
+          return (
+            <a
+              aria-current={isActive ? "page" : undefined}
+              className={isActive ? "admin-tab admin-tab-active" : "admin-tab"}
+              href={href}
+              key={item.value}
+            >
+              <strong>{item.label}</strong>
+              <span>{item.description}</span>
+            </a>
+          );
+        })}
+      </nav>
+    </section>
+  );
+}
+
+function AdminTodayGuide({ preservedQuery }: { preservedQuery: AdminPreservedQuery }) {
+  const pendingHref = buildAdminHrefFromPreservedQuery({
+    ...preservedQuery,
+    tab: "today",
+    recentStatus: "uploaded_pending"
+  });
+  const reuploadHref = buildAdminHrefFromPreservedQuery({ ...preservedQuery, tab: "reupload" });
+  const webhookAttentionHref = buildAdminHrefFromPreservedQuery({
+    ...preservedQuery,
+    tab: "logs",
+    webhookStatus: "failed"
+  });
+
+  return (
+    <section className="panel panel-pad" aria-labelledby="today-work-title">
+      <h2 id="today-work-title">오늘 처리할 업무</h2>
       <p className="lead">
-        자주 확인하는 관리자 섹션으로 바로 이동할 수 있습니다. 기존 조회, 다운로드, 상태 변경 기능은 그대로 유지됩니다.
+        최근 업로드 파일을 먼저 보고, 확인 전 파일과 재업로드 완료 파일, 주의가 필요한 Webhook 로그를 순서대로 확인합니다.
       </p>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
-        {ADMIN_QUICK_NAV_ITEMS.map((item) => (
-          <a className="button secondary button-small" href={item.href} key={item.href}>
-            {item.label}
-          </a>
-        ))}
+      <div className="grid grid-3" style={{ marginTop: 16 }}>
+        <a className="card admin-action-card" href={pendingHref}>
+          <span>확인 전 파일</span>
+          <strong>업로드됨 / 확인 전</strong>
+          <p>최근 업로드 목록을 확인 전 상태로 필터링합니다.</p>
+        </a>
+        <a className="card admin-action-card" href={reuploadHref}>
+          <span>재업로드</span>
+          <strong>재업로드 완료 파일 확인</strong>
+          <p>재업로드 요청 이력과 새 파일 처리 버튼을 확인합니다.</p>
+        </a>
+        <a className="card admin-action-card" href={webhookAttentionHref}>
+          <span>Webhook</span>
+          <strong>확인 필요 로그</strong>
+          <p>처리 실패 로그부터 확인해 주문 연결 문제를 점검합니다.</p>
+        </a>
       </div>
     </section>
   );
@@ -919,7 +988,7 @@ function ReuploadSourceNotice({ requests }: { requests: FileReuploadRequestRecor
                 <td>
                   <a
                     className="button secondary button-small"
-                    href={`/admin?file_id=${encodeURIComponent(request.original_file_id)}`}
+                    href={`/admin?tab=files&file_id=${encodeURIComponent(request.original_file_id)}`}
                   >
                     원본 파일 상세 보기
                   </a>
@@ -930,6 +999,74 @@ function ReuploadSourceNotice({ requests }: { requests: FileReuploadRequestRecor
         </table>
       </div>
     </div>
+  );
+}
+
+function ReuploadWorkflowPanel({
+  lookup
+}: {
+  lookup: FileLookupState;
+}) {
+  const file = lookup.file;
+
+  return (
+    <section className="panel panel-pad" id="reupload-workflow">
+      <h2>재업로드 처리</h2>
+      <p className="lead">
+        문제가 있는 파일의 file_id를 검색한 뒤 고객 안내문, 재업로드 링크 생성, 재업로드 이력을 한 곳에서 확인합니다.
+      </p>
+      <form className="form" method="get" style={{ marginTop: 16 }}>
+        <input name="tab" type="hidden" value="reupload" />
+        <div className="field">
+          <label htmlFor="reupload_file_id">file_id</label>
+          <input
+            id="reupload_file_id"
+            name="file_id"
+            placeholder="재업로드를 요청하거나 확인할 file_id를 입력하세요."
+            defaultValue={lookup.query}
+          />
+        </div>
+        <button className="button" type="submit">재업로드 파일 찾기</button>
+      </form>
+
+      {lookup.message ? (
+        <div className="notice" style={{ marginTop: 16 }}>{lookup.message}</div>
+      ) : null}
+
+      {file ? (
+        <div style={{ marginTop: 16 }}>
+          <div className="grid grid-3">
+            <FileLookupField label="file_id" value={file.id} />
+            <FileLookupField label="original_filename" value={file.original_filename} />
+            <FileLookupField label="order_id" value={file.order_id} emptyText="미연결" />
+            <FileLookupField label="status" value={file.status} />
+            <FileLookupField label="created_at" value={file.created_at} />
+            <FileLookupField label="updated_at" value={file.updated_at} />
+          </div>
+          <ReuploadSourceNotice requests={lookup.reuploadSourceRequests} />
+          <ReuploadRequestMessagePanel
+            currentStatus={file.status}
+            fileId={file.id}
+            orderId={file.order_id}
+            originalFilename={file.original_filename}
+          />
+          <ReuploadLinkCreatePanel
+            fileId={file.id}
+            initialRequests={lookup.reuploadRequests}
+            orderId={file.order_id}
+            originalFilename={file.original_filename}
+          />
+          <div className="notice" style={{ marginTop: 16 }}>
+            새 파일을 다운로드하여 확인한 뒤, 필요하면 새 파일 상태를 직접 변경하세요. 기존 파일은 자동 삭제되거나
+            자동으로 “새 파일로 교체됨” 처리되지 않습니다.
+          </div>
+        </div>
+      ) : (
+        <div className="notice" style={{ marginTop: 16 }}>
+          file_id를 검색하면 재업로드 요청 안내문과 재업로드 링크 생성 영역이 표시됩니다.
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -1549,6 +1686,7 @@ function Cafe24OrderApiLookupPanel({
         이 기능은 조회 테스트 전용이며 Supabase files.order_id를 자동 업데이트하지 않습니다.
       </p>
       <form className="form" method="get" style={{ marginTop: 16 }}>
+        <input name="tab" type="hidden" value="files" />
         <div className="field">
           <label htmlFor="cafe24_order_id_lookup">Cafe24 주문번호</label>
           <input
@@ -1805,7 +1943,9 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
   const proofOrderIdFilter = readParam(searchParams, "proof_order_id").trim();
   const proofStartDateFilter = readParam(searchParams, "proof_start_date").trim();
   const proofEndDateFilter = readParam(searchParams, "proof_end_date").trim();
+  const activeTab = getAdminTab(readParam(searchParams, "tab"));
   const preservedQuery: AdminPreservedQuery = {
+    tab: activeTab,
     fileId: fileIdQuery,
     orderId: orderIdQuery,
     cafe24OrderId: cafe24OrderIdQuery,
@@ -1879,6 +2019,10 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
 
       {data.dataError ? <div className="notice">{data.dataError}</div> : null}
 
+      <AdminWorkflowTabs activeTab={activeTab} preservedQuery={preservedQuery} />
+
+      {activeTab === "settings" ? (
+        <>
       <section className="grid grid-3">
         <div className="card">
           <span>Cafe24</span>
@@ -1916,27 +2060,14 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
           <div className="card"><span>scopes</span><strong>{data.installation?.scopes ?? "-"}</strong></div>
         </div>
       </section>
+        </>
+      ) : null}
 
-      <AdminQuickNav />
+      {activeTab === "today" ? <AdminTodayGuide preservedQuery={preservedQuery} /> : null}
 
+      {activeTab === "files" ? (
+        <>
       <Cafe24OrderApiLookupPanel lookup={data.cafe24OrderLookup} linkMessage={cafe24AutoLinkMessage} />
-
-      <Cafe24WebhookEventsPanel
-        events={data.cafe24WebhookEvents}
-        selectedStatus={webhookStatusFilter}
-        preservedQuery={preservedQuery}
-      />
-
-      <AdminProofConfirmationLogPanel
-        logs={data.proofConfirmationLogs}
-        proofStatus={proofStatusFilter}
-        proofFileId={proofFileIdFilter}
-        proofOrderId={proofOrderIdFilter}
-        proofStartDate={proofStartDateFilter}
-        proofEndDate={proofEndDateFilter}
-        exportHref={proofConfirmationLogsExportHref}
-        preservedQuery={preservedQuery}
-      />
 
       <section className="panel panel-pad" id="find-files-by-order">
         <h2>주문번호로 업로드 파일 찾기</h2>
@@ -1944,6 +2075,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
           Cafe24 주문번호를 입력하면 해당 주문번호에 연결된 업로드 파일 목록을 확인할 수 있습니다.
         </p>
         <form className="form" method="get" style={{ marginTop: 16 }}>
+          <input name="tab" type="hidden" value="files" />
           <div className="field">
             <label htmlFor="order_id_lookup">Cafe24 주문번호</label>
             <input
@@ -1992,6 +2124,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
           Cafe24 관리자 주문상세에 표시된 “업로드 파일 ID”를 입력하면 저장된 파일 정보를 확인할 수 있습니다.
         </p>
         <form className="form" method="get" style={{ marginTop: 16 }}>
+          <input name="tab" type="hidden" value="files" />
           <div className="field">
             <label htmlFor="file_id">file_id</label>
             <input
@@ -2062,12 +2195,21 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
         ) : null}
       </section>
 
+        </>
+      ) : null}
+
+      {activeTab === "reupload" ? (
+        <ReuploadWorkflowPanel lookup={data.fileLookup} />
+      ) : null}
+
+      {activeTab === "today" ? (
       <section className="panel panel-pad" id="recent-files">
         <h2>최근 업로드 파일</h2>
         <p className="lead">
           최근 고객이 업로드한 파일 목록입니다. 파일을 다운로드하거나 상태를 변경할 수 있습니다.
         </p>
         <form className="form" method="get" style={{ marginTop: 16, marginBottom: 16 }}>
+          <input name="tab" type="hidden" value="today" />
           {fileIdQuery ? <input name="file_id" type="hidden" value={fileIdQuery} /> : null}
           {orderIdQuery ? <input name="order_id" type="hidden" value={orderIdQuery} /> : null}
           {downloadFileIdFilter ? <input name="download_file_id" type="hidden" value={downloadFileIdFilter} /> : null}
@@ -2103,7 +2245,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
               <span>&nbsp;</span>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button className="button" type="submit">필터 적용</button>
-                <a className="button secondary" href="/admin">초기화</a>
+                <a className="button secondary" href="/admin?tab=today">초기화</a>
               </div>
             </div>
           </div>
@@ -2157,12 +2299,34 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
         </div>
       </section>
 
+      ) : null}
+
+      {activeTab === "logs" ? (
+        <>
+      <Cafe24WebhookEventsPanel
+        events={data.cafe24WebhookEvents}
+        selectedStatus={webhookStatusFilter}
+        preservedQuery={preservedQuery}
+      />
+
+      <AdminProofConfirmationLogPanel
+        logs={data.proofConfirmationLogs}
+        proofStatus={proofStatusFilter}
+        proofFileId={proofFileIdFilter}
+        proofOrderId={proofOrderIdFilter}
+        proofStartDate={proofStartDateFilter}
+        proofEndDate={proofEndDateFilter}
+        exportHref={proofConfirmationLogsExportHref}
+        preservedQuery={preservedQuery}
+      />
+
       <section className="panel panel-pad" id="download-logs">
         <h2>전체 다운로드 로그</h2>
         <p className="lead">
           관리자가 파일을 다운로드한 이력을 최근 순으로 확인할 수 있습니다. file_id, Cafe24 주문번호, 결과 기준으로 필터링할 수 있습니다.
         </p>
         <form className="form" method="get" style={{ marginTop: 16, marginBottom: 16 }}>
+          <input name="tab" type="hidden" value="logs" />
           {fileIdQuery ? <input name="file_id" type="hidden" value={fileIdQuery} /> : null}
           {orderIdQuery ? <input name="order_id" type="hidden" value={orderIdQuery} /> : null}
           {recentStatusFilter !== "all" ? <input name="recent_status" type="hidden" value={recentStatusFilter} /> : null}
@@ -2218,12 +2382,14 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button className="button" type="submit">필터 적용</button>
             <AdminRefreshButton />
-            <a className="button secondary" href="/admin">초기화</a>
+            <a className="button secondary" href="/admin?tab=logs">초기화</a>
             <a className="button secondary" href={downloadLogsExportHref}>CSV 다운로드</a>
           </div>
         </form>
         <AdminDownloadLogTable logs={data.adminDownloadLogs} />
       </section>
+        </>
+      ) : null}
     </main>
   );
 }
