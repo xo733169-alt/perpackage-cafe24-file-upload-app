@@ -472,8 +472,15 @@ th {
 .file-status-page {
   display: grid;
   gap: 18px;
+  width: 100%;
   max-width: 980px;
   margin: 0 auto;
+}
+
+.file-status-page > *,
+.file-status-panel-heading > *,
+.file-status-form > * {
+  min-width: 0;
 }
 
 .file-status-hero {
@@ -483,6 +490,12 @@ th {
   border: 1px solid var(--line);
   border-radius: 16px;
   background: linear-gradient(135deg, #ffffff 0%, #f3f7ff 100%);
+}
+
+.file-status-hero h1,
+.file-status-panel-heading p,
+.file-status-help li {
+  overflow-wrap: anywhere;
 }
 
 .file-status-panel,
@@ -638,5 +651,9 @@ th {
   .file-status-panel,
   .file-status-help {
     padding: 18px;
+  }
+
+  .file-status-submit {
+    width: 100%;
   }
 }
