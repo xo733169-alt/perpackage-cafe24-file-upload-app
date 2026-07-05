@@ -678,10 +678,11 @@ th {
   }
 
   .file-status-page {
-    max-width: 100%;
+    max-width: 320px;
   }
 
   .file-status-page h1 {
+    max-width: 100%;
     font-size: 22px;
     line-height: 1.18;
   }
