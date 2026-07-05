@@ -475,11 +475,15 @@ th {
   width: 100%;
   max-width: 980px;
   margin: 0 auto;
+  overflow-x: hidden;
 }
 
 .file-status-page > *,
 .file-status-panel-heading > *,
-.file-status-form > * {
+.file-status-form > *,
+.file-status-hero > *,
+.file-status-result > *,
+.file-status-details > * {
   min-width: 0;
 }
 
@@ -496,11 +500,13 @@ th {
 .file-status-panel-heading p,
 .file-status-help li {
   overflow-wrap: anywhere;
+  word-break: break-all;
 }
 
 .file-status-panel,
 .file-status-help,
 .file-status-result {
+  max-width: 100%;
   border: 1px solid var(--line);
   border-radius: 14px;
   background: var(--paper);
@@ -541,6 +547,10 @@ th {
 
 .file-status-submit {
   min-width: 120px;
+}
+
+.file-status-form input {
+  min-width: 0;
 }
 
 .file-status-feedback {
