@@ -545,12 +545,25 @@ th {
   align-items: end;
 }
 
+.file-status-form .field {
+  min-width: 0;
+}
+
 .file-status-submit {
   min-width: 120px;
 }
 
 .file-status-form input {
   min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#file-status-file-id {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+  letter-spacing: 0;
 }
 
 .field-help {
@@ -685,7 +698,26 @@ th {
   }
 
   .file-status-page {
-    max-width: 320px;
+    max-width: 100%;
+  }
+
+  .file-status-form {
+    gap: 14px;
+  }
+
+  .file-status-form input {
+    padding: 10px 11px;
+    font-size: 14px;
+  }
+
+  #file-status-file-id {
+    font-size: 12px;
+    line-height: 1.45;
+  }
+
+  .file-status-details code {
+    font-size: 11px;
+    line-height: 1.5;
   }
 
   .file-status-page h1 {
