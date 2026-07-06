@@ -13,7 +13,11 @@ import { ReuploadLinkCreatePanel } from "@/components/ReuploadLinkCreatePanel";
 import { ReuploadRequestMessagePanel } from "@/components/ReuploadRequestMessagePanel";
 import { getAdminAuthConfigStatus, isAdminAuthenticated } from "@/lib/admin/auth";
 import { getCafe24ConfigStatus } from "@/lib/cafe24/config";
-import { fetchCafe24OrderLookup, type Cafe24OrderLookupSummary } from "@/lib/cafe24/order-lookup";
+import {
+  fetchCafe24OrderLookup,
+  formatCafe24OrderStatusCode,
+  type Cafe24OrderLookupSummary
+} from "@/lib/cafe24/order-lookup";
 import { getCafe24Installation } from "@/lib/cafe24/token-store";
 import {
   listRecentCafe24WebhookEvents,
@@ -1804,7 +1808,7 @@ function Cafe24FileOrderInfoPanel({
                   <td>{formatEmpty(item.productNo)}</td>
                   <td>{formatEmpty(item.variantCode)}</td>
                   <td>{formatEmpty(item.quantity)}</td>
-                  <td>{formatEmpty(item.itemOrderStatus)}</td>
+                  <td>{formatEmpty(formatCafe24OrderStatusCode(item.itemOrderStatus))}</td>
                   <td>{formatEmpty(item.optionText)}</td>
                   <td>{formatEmpty(item.additionalOptionText)}</td>
                   <td>

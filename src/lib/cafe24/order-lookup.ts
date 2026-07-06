@@ -4,6 +4,9 @@ import { getCafe24Installation, getValidCafe24AccessToken } from "./token-store"
 const UUID_PATTERN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi;
 const FILE_ID_KEYWORDS = ["업로드 파일 ID", "파일 ID", "file_id", "파일접수번호"];
 const SENSITIVE_KEY_PATTERN = /(token|secret|authorization|password|client_secret|access_token|refresh_token|signature)/i;
+const CAFE24_ORDER_STATUS_LABELS: Record<string, string> = {
+  N00: "입금전"
+};
 
 export type Cafe24OrderLookupItem = {
   productName: string | null;
@@ -61,6 +64,16 @@ function firstString(record: Record<string, unknown>, keys: string[]) {
   }
 
   return null;
+}
+
+export function formatCafe24OrderStatusCode(status: string | number | boolean | null | undefined) {
+  const code = asString(status);
+  if (!code) return null;
+
+  const normalizedCode = code.toUpperCase();
+  const label = CAFE24_ORDER_STATUS_LABELS[normalizedCode];
+
+  return label ? `${label} (${normalizedCode})` : code;
 }
 
 function getOrderObject(payload: unknown): Record<string, unknown> | null {
