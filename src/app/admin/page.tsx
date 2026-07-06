@@ -68,6 +68,9 @@ export const revalidate = 0;
 type FileLookupState = {
   query: string;
   file: UploadedFileRecord | null;
+  cafe24Order: Cafe24OrderLookupSummary | null;
+  cafe24OrderMessage: string | null;
+  cafe24OrderStatus: "idle" | "found" | "not_linked" | "error";
   downloadLogs: FileDownloadLogRecord[];
   statusLogs: FileStatusChangeLogRecord[];
   orderLinkLogs: FileOrderLinkLogRecord[];
@@ -624,6 +627,9 @@ async function lookupFileById(rawFileId: string, shouldSearch: boolean): Promise
     return {
       query: "",
       file: null,
+      cafe24Order: null,
+      cafe24OrderMessage: null,
+      cafe24OrderStatus: "idle",
       downloadLogs: [],
       statusLogs: [],
       orderLinkLogs: [],
@@ -639,6 +645,9 @@ async function lookupFileById(rawFileId: string, shouldSearch: boolean): Promise
     return {
       query: rawFileId,
       file: null,
+      cafe24Order: null,
+      cafe24OrderMessage: null,
+      cafe24OrderStatus: "idle",
       downloadLogs: [],
       statusLogs: [],
       orderLinkLogs: [],
@@ -657,6 +666,9 @@ async function lookupFileById(rawFileId: string, shouldSearch: boolean): Promise
       return {
         query,
         file: null,
+        cafe24Order: null,
+        cafe24OrderMessage: null,
+        cafe24OrderStatus: "idle",
         downloadLogs: [],
         statusLogs: [],
         orderLinkLogs: [],
@@ -666,6 +678,21 @@ async function lookupFileById(rawFileId: string, shouldSearch: boolean): Promise
         message: "해당 file_id의 업로드 파일을 찾지 못했습니다.",
         status: "not_found"
       };
+    }
+
+    let cafe24Order: Cafe24OrderLookupSummary | null = null;
+    let cafe24OrderMessage: string | null = null;
+    let cafe24OrderStatus: FileLookupState["cafe24OrderStatus"] = "not_linked";
+    const linkedOrderId = file.order_id?.trim();
+
+    if (linkedOrderId) {
+      try {
+        cafe24Order = await fetchCafe24OrderLookup(linkedOrderId);
+        cafe24OrderStatus = "found";
+      } catch {
+        cafe24OrderMessage = "Cafe24 주문 정보를 불러오지 못했습니다. 설정 탭의 OAuth 상태를 확인해 주세요.";
+        cafe24OrderStatus = "error";
+      }
     }
 
     const [
@@ -686,6 +713,9 @@ async function lookupFileById(rawFileId: string, shouldSearch: boolean): Promise
     return {
       query,
       file,
+      cafe24Order,
+      cafe24OrderMessage,
+      cafe24OrderStatus,
       downloadLogs,
       statusLogs,
       orderLinkLogs,
@@ -699,6 +729,9 @@ async function lookupFileById(rawFileId: string, shouldSearch: boolean): Promise
     return {
       query,
       file: null,
+      cafe24Order: null,
+      cafe24OrderMessage: null,
+      cafe24OrderStatus: "idle",
       downloadLogs: [],
       statusLogs: [],
       orderLinkLogs: [],
@@ -1671,6 +1704,124 @@ function Cafe24OrderFileMatchPanel({
   );
 }
 
+function getCafe24ItemLookupStatusLabel(status: Cafe24OrderLookupSummary["responseShape"]["itemLookupStatus"]) {
+  switch (status) {
+    case "success":
+      return "품목 조회 성공";
+    case "failed":
+      return "품목 조회 실패";
+    case "not_attempted":
+      return "품목 조회 안 함";
+    default:
+      return status;
+  }
+}
+
+function Cafe24FileOrderInfoPanel({
+  file,
+  order,
+  message,
+  status
+}: {
+  file: UploadedFileRecord;
+  order: Cafe24OrderLookupSummary | null;
+  message: string | null;
+  status: FileLookupState["cafe24OrderStatus"];
+}) {
+  if (!file.order_id) {
+    return (
+      <div className="notice" style={{ marginTop: 16 }}>
+        <h3 style={{ marginTop: 0 }}>Cafe24 주문 정보</h3>
+        <p style={{ marginBottom: 0 }}>주문번호가 연결된 후 Cafe24 주문 정보를 확인할 수 있습니다.</p>
+      </div>
+    );
+  }
+
+  if (status === "error" || !order) {
+    return (
+      <div className="notice" style={{ marginTop: 16 }}>
+        <h3 style={{ marginTop: 0 }}>Cafe24 주문 정보</h3>
+        <p style={{ marginBottom: 0 }}>
+          {message ?? "Cafe24 주문 정보를 불러오지 못했습니다. 설정 탭의 OAuth 상태를 확인해 주세요."}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="notice" style={{ marginTop: 16 }}>
+      <h3 style={{ marginTop: 0 }}>Cafe24 주문 정보</h3>
+      <p>
+        주문번호에 연결된 Cafe24 주문의 상품/옵션 요약입니다. 주문자명, 연락처, 이메일, 배송지 주소는 표시하지 않습니다.
+      </p>
+      <div className="grid grid-3">
+        <FileLookupField label="Cafe24 주문번호" value={order.orderId ?? file.order_id} />
+        <FileLookupField label="order_no" value={order.orderNo} />
+        <FileLookupField label="주문일" value={order.orderedAt} />
+        <FileLookupField label="주문상태" value={order.orderStatus} />
+        <FileLookupField label="조회 상태" value="조회 성공" />
+        <FileLookupField label="주문 품목 수" value={order.responseShape.itemCount} />
+        <FileLookupField
+          label="품목 조회 상태"
+          value={getCafe24ItemLookupStatusLabel(order.responseShape.itemLookupStatus)}
+        />
+        <FileLookupField label="업로드 파일 ID 발견 수" value={order.uploadFileIds.length} />
+      </div>
+
+      <div style={{ marginTop: 16 }}>
+        <h4 style={{ marginBottom: 8 }}>주문에서 확인된 업로드 파일 ID</h4>
+        {order.uploadFileIds.length ? (
+          <ul style={{ marginBottom: 0 }}>
+            {order.uploadFileIds.map((fileId) => (
+              <li key={fileId}><CopyFileIdButton fileId={fileId} /></li>
+            ))}
+          </ul>
+        ) : (
+          <p style={{ marginBottom: 0 }}>주문 품목에서 업로드 파일 ID를 찾지 못했습니다.</p>
+        )}
+      </div>
+
+      <div style={{ marginTop: 18 }}>
+        <h4 style={{ marginBottom: 8 }}>상품/옵션 요약</h4>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>상품명</th>
+                <th>상품번호</th>
+                <th>variant code</th>
+                <th>상품 옵션</th>
+                <th>추가 입력 옵션</th>
+                <th>업로드 파일 ID</th>
+              </tr>
+            </thead>
+            <tbody>
+              {order.items.length ? order.items.map((item, index) => (
+                <tr key={`${item.productNo ?? "item"}-${index}`}>
+                  <td>{formatEmpty(item.productName)}</td>
+                  <td>{formatEmpty(item.productNo)}</td>
+                  <td>{formatEmpty(item.variantCode)}</td>
+                  <td>{formatEmpty(item.optionText)}</td>
+                  <td>{formatEmpty(item.additionalOptionText)}</td>
+                  <td>
+                    {item.uploadFileIds.length ? item.uploadFileIds.map((fileId) => (
+                      <div key={fileId}><CopyFileIdButton fileId={fileId} /></div>
+                    )) : "-"}
+                  </td>
+                </tr>
+              )) : (
+                <tr>
+                  <td colSpan={6}>Cafe24 주문 품목 요약을 찾지 못했습니다.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Cafe24OrderApiLookupPanel({
   lookup,
   linkMessage
@@ -2165,6 +2316,12 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
               <FileLookupField label="created_at" value={data.fileLookup.file.created_at} />
               <FileLookupField label="updated_at" value={data.fileLookup.file.updated_at} />
             </div>
+            <Cafe24FileOrderInfoPanel
+              file={data.fileLookup.file}
+              message={data.fileLookup.cafe24OrderMessage}
+              order={data.fileLookup.cafe24Order}
+              status={data.fileLookup.cafe24OrderStatus}
+            />
             <ReuploadSourceNotice requests={data.fileLookup.reuploadSourceRequests} />
             <OrderLinkPanel file={data.fileLookup.file} message={orderLinkMessage} />
             <OrderLinkLogPanel logs={data.fileLookup.orderLinkLogs} />
