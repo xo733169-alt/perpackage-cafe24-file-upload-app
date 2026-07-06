@@ -1790,6 +1790,8 @@ function Cafe24FileOrderInfoPanel({
                 <th>상품명</th>
                 <th>상품번호</th>
                 <th>variant code</th>
+                <th>품목 수량</th>
+                <th>품목 상태</th>
                 <th>상품 옵션</th>
                 <th>추가 입력 옵션</th>
                 <th>업로드 파일 ID</th>
@@ -1801,6 +1803,8 @@ function Cafe24FileOrderInfoPanel({
                   <td>{formatEmpty(item.productName)}</td>
                   <td>{formatEmpty(item.productNo)}</td>
                   <td>{formatEmpty(item.variantCode)}</td>
+                  <td>{formatEmpty(item.quantity)}</td>
+                  <td>{formatEmpty(item.itemOrderStatus)}</td>
                   <td>{formatEmpty(item.optionText)}</td>
                   <td>{formatEmpty(item.additionalOptionText)}</td>
                   <td>
@@ -1811,7 +1815,7 @@ function Cafe24FileOrderInfoPanel({
                 </tr>
               )) : (
                 <tr>
-                  <td colSpan={6}>Cafe24 주문 품목 요약을 찾지 못했습니다.</td>
+                  <td colSpan={8}>Cafe24 주문 품목 요약을 찾지 못했습니다.</td>
                 </tr>
               )}
             </tbody>

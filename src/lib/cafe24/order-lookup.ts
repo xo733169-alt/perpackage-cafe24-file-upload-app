@@ -9,6 +9,8 @@ export type Cafe24OrderLookupItem = {
   productName: string | null;
   productNo: string | null;
   variantCode: string | null;
+  quantity: string | null;
+  itemOrderStatus: string | null;
   optionText: string | null;
   additionalOptionText: string | null;
   uploadFileIds: string[];
@@ -241,6 +243,8 @@ export function summarizeCafe24OrderLookup({
       ]),
       productNo: firstString(item, ["product_no", "productNo"]),
       variantCode: firstString(item, ["variant_code", "variantCode"]),
+      quantity: firstString(item, ["quantity"]),
+      itemOrderStatus: firstString(item, ["order_status"]),
       optionText: summarizeOptionText(item, itemPath),
       additionalOptionText: summarizeAdditionalOptionText(item, itemPath),
       uploadFileIds: uploadInfo.uploadFileIds,
