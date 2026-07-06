@@ -102,10 +102,13 @@ export function FileStatusLookupForm() {
             id="file-status-order-id"
             name="order_id"
             autoComplete="off"
-            placeholder="Cafe24 주문번호를 입력해 주세요"
+            placeholder="Cafe24 주문번호 예: 20260704-0000014"
             value={orderId}
             onChange={(event) => setOrderId(event.target.value)}
           />
+          <p className="field-help">
+            품목별 주문번호 끝에 -01, -02가 붙어 있어도 조회할 수 있습니다.
+          </p>
         </div>
         <div className="field">
           <label htmlFor="file-status-file-id">업로드 파일 ID</label>

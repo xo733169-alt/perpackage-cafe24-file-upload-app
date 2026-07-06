@@ -39,6 +39,7 @@ export type CustomerFileStatusLookupResult = {
 
 const FILE_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const CAFE24_ITEM_ORDER_ID_PATTERN = /^(\d{8}-\d{7})-\d{2}$/;
 
 const CUSTOMER_FILE_SELECT = [
   "id",
@@ -125,6 +126,11 @@ function normalizeInput(value: string, maxLength: number) {
   }
 
   return normalized;
+}
+
+function normalizeCafe24OrderId(value: string) {
+  const itemOrderMatch = value.match(CAFE24_ITEM_ORDER_ID_PATTERN);
+  return itemOrderMatch ? itemOrderMatch[1] : value;
 }
 
 function sanitizeErrorMessage(message?: string | null) {
@@ -215,7 +221,8 @@ export async function lookupCustomerFileStatus(input: {
   orderId: string;
   fileId: string;
 }): Promise<CustomerFileStatusLookupResult | null> {
-  const orderId = normalizeInput(input.orderId, 120);
+  const inputOrderId = normalizeInput(input.orderId, 120);
+  const orderId = inputOrderId ? normalizeCafe24OrderId(inputOrderId) : null;
   const fileId = normalizeInput(input.fileId, 80);
 
   if (!orderId || !fileId || !FILE_ID_PATTERN.test(fileId)) {
