@@ -1239,30 +1239,25 @@
       var actionElement = findOrderActionElement(event.target);
       if (!actionElement) return;
 
-      if (
-        currentUpload &&
-        currentUpload.fileId &&
-        isFileIdInputValid(currentUpload) &&
-        isUploadReady(currentUpload.fileIdInputMatch)
-      ) {
-        return;
-      }
-
-      event.preventDefault();
-      event.stopPropagation();
-      if (event.stopImmediatePropagation) event.stopImmediatePropagation();
-
       if (isUploading) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+
         showMessage(status, result, "파일을 업로드하는 중입니다. 업로드가 완료된 뒤 구매하기 또는 장바구니를 진행해 주세요.", true);
         return;
       }
 
-      if (!refreshUploadAvailability()) {
-        showMessage(status, result, "상품 옵션을 먼저 선택해 주세요. 옵션 선택 후 파일 업로드를 완료해야 구매하기 또는 장바구니를 진행할 수 있습니다.", true);
-        return;
-      }
+      // File upload is optional; allow order actions unless an uploaded file_id was changed to another non-empty value.
+      if (!currentUpload || !currentUpload.fileId) return;
+      if (!getCurrentFileIdValue(currentUpload)) return;
+      if (isFileIdInputValid(currentUpload)) return;
 
       if (currentUpload && currentUpload.fileId) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+
         showFileIdChangedWarning(status, result);
         return;
       }
