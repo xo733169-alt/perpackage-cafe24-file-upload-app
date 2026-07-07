@@ -87,11 +87,17 @@
     var style = document.createElement("style");
     style.id = STYLE_ID;
     style.textContent = [
-      "#app-perpackage-product-upload{margin:18px 0;padding:18px;border:1px solid #d9e2f2;border-radius:8px;background:#fff;color:#1f2a44;font-family:inherit;box-sizing:border-box;box-shadow:0 6px 18px rgba(31,42,68,.06)}",
+      "#app-perpackage-product-upload{position:relative;margin:14px 0;padding:16px;border:2px solid #2A408C;border-radius:8px;background:#fff;color:#1f2a44;font-family:inherit;box-sizing:border-box;box-shadow:0 10px 26px rgba(42,64,140,.14);scroll-margin-top:18px}",
       "#app-perpackage-product-upload *{box-sizing:border-box}",
+      "#app-perpackage-product-upload .ppu-header{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin:0 0 8px}",
       "#app-perpackage-product-upload .ppu-title{margin:0 0 8px;font-size:17px;font-weight:700;color:#15213b;line-height:1.35}",
       "#app-perpackage-product-upload .ppu-desc{margin:0 0 6px;font-size:13px;line-height:1.6;color:#4b5875}",
-      "#app-perpackage-product-upload .ppu-guide{margin:12px 0;padding:12px;border:1px solid #dbe5f5;border-radius:8px;background:#f7faff}",
+      "#app-perpackage-product-upload .ppu-help{position:relative;flex:0 0 auto}",
+      "#app-perpackage-product-upload .ppu-help-button{display:inline-grid;place-items:center;width:28px;height:28px;border:1px solid #b8c4dd;border-radius:50%;background:#f7faff;color:#2A408C;font-size:15px;font-weight:800;line-height:1;cursor:pointer}",
+      "#app-perpackage-product-upload .ppu-help-button:hover,#app-perpackage-product-upload .ppu-help-button:focus{border-color:#2A408C;background:#eef4ff;outline:none}",
+      "#app-perpackage-product-upload .ppu-help-panel{display:none;position:absolute;right:0;top:34px;z-index:50;width:min(320px,calc(100vw - 40px));padding:12px;border:1px solid #b8c4dd;border-radius:8px;background:#fff;box-shadow:0 14px 34px rgba(31,42,68,.18);font-size:12px;line-height:1.55;color:#4b5875;text-align:left}",
+      "#app-perpackage-product-upload .ppu-help:hover .ppu-help-panel,#app-perpackage-product-upload .ppu-help:focus-within .ppu-help-panel,#app-perpackage-product-upload .ppu-help.ppu-help-open .ppu-help-panel{display:block}",
+      "#app-perpackage-product-upload .ppu-guide{margin:0;padding:0;border:0;background:transparent}",
       "#app-perpackage-product-upload .ppu-guide-title{margin:0 0 8px;font-size:13px;font-weight:700;color:#1f2a44}",
       "#app-perpackage-product-upload .ppu-checklist{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 12px;margin:0;padding:0;list-style:none}",
       "#app-perpackage-product-upload .ppu-checklist li{position:relative;padding-left:18px;font-size:12px;line-height:1.45;color:#4b5875}",
@@ -100,7 +106,7 @@
       "#app-perpackage-product-upload .ppu-file-help{margin:0;font-size:12px;line-height:1.55;color:#5b6680}",
       "#app-perpackage-product-upload .ppu-static-note{margin:10px 0 0;padding:10px 12px;border:1px solid #dbe5f5;border-radius:8px;background:#f7faff;font-size:12px;line-height:1.6;color:#4b5875}",
       "#app-perpackage-product-upload .ppu-static-note strong{color:#2A408C;font-weight:700}",
-      "#app-perpackage-product-upload .ppu-option-gate{margin:12px 0 0;padding:11px 12px;border:1px solid #f3c969;border-radius:8px;background:#fff9e8;color:#8a5a00;font-size:12px;line-height:1.6}",
+      "#app-perpackage-product-upload .ppu-option-gate{margin:10px 0 0;padding:10px 12px;border:1px solid #f3c969;border-radius:8px;background:#fff9e8;color:#8a5a00;font-size:12px;line-height:1.5}",
       "#app-perpackage-product-upload.ppu-is-ready .ppu-option-gate{border-color:#c8d9f5;background:#f7faff;color:#2A408C}",
       "#app-perpackage-product-upload .ppu-upload-controls{display:none;gap:10px}",
       "#app-perpackage-product-upload.ppu-is-ready .ppu-upload-controls{display:grid}",
@@ -124,7 +130,7 @@
       "#app-perpackage-product-upload .ppu-error{color:#b42318}",
       "#app-perpackage-product-upload .ppu-success{color:#155724}",
       "#app-perpackage-product-upload .ppu-warning{color:#9a6700}",
-      "@media (max-width:560px){#app-perpackage-product-upload{padding:14px}#app-perpackage-product-upload .ppu-checklist{grid-template-columns:1fr}#app-perpackage-product-upload .ppu-file-row{grid-template-columns:1fr}#app-perpackage-product-upload .ppu-button{max-width:none}}"
+      "@media (max-width:560px){#app-perpackage-product-upload{padding:14px}#app-perpackage-product-upload .ppu-header{align-items:center}#app-perpackage-product-upload .ppu-help-panel{right:-4px;width:calc(100vw - 32px)}#app-perpackage-product-upload .ppu-checklist{grid-template-columns:1fr}#app-perpackage-product-upload .ppu-file-row{grid-template-columns:1fr}#app-perpackage-product-upload .ppu-button{max-width:none}}"
     ].join("\n");
     document.head.appendChild(style);
   }
@@ -150,6 +156,82 @@
     }
 
     return document.body;
+  }
+
+  function insertWidget(wrapper, target) {
+    var beforeSelectors = [
+      CONFIG.insertBeforeSelector,
+      "#totalProducts",
+      ".totalPrice",
+      ".total_price",
+      ".xans-product-action",
+      ".productAction",
+      ".ec-base-button"
+    ];
+
+    for (var i = 0; i < beforeSelectors.length; i += 1) {
+      var selector = String(beforeSelectors[i] || "").trim();
+      if (!selector) continue;
+
+      try {
+        var reference = target.querySelector ? target.querySelector(selector) : null;
+        if (!reference) reference = document.querySelector(selector);
+        if (reference && reference.parentNode) {
+          reference.parentNode.insertBefore(wrapper, reference);
+          return;
+        }
+      } catch (error) {
+        // Ignore theme-specific selector errors and fall back to appending.
+      }
+    }
+
+    target.appendChild(wrapper);
+  }
+
+  function compactUploadGuidance(wrapper) {
+    var title = wrapper.querySelector(".ppu-title");
+    if (!title || title.closest(".ppu-header")) return;
+
+    var header = document.createElement("div");
+    header.className = "ppu-header";
+    wrapper.insertBefore(header, wrapper.firstChild);
+    header.appendChild(title);
+
+    var help = document.createElement("div");
+    help.className = "ppu-help";
+    help.innerHTML = [
+      '<button class="ppu-help-button" type="button" aria-label="업로드 도움말 보기" aria-expanded="false" data-ppu-help-toggle>?</button>',
+      '<div class="ppu-help-panel" role="tooltip" data-ppu-help-panel></div>'
+    ].join("");
+    header.appendChild(help);
+
+    var panel = help.querySelector("[data-ppu-help-panel]");
+    var descriptions = wrapper.querySelectorAll(".ppu-desc");
+    for (var i = 0; i < descriptions.length; i += 1) {
+      if (i === 0) continue;
+      panel.appendChild(descriptions[i]);
+    }
+
+    var guide = wrapper.querySelector(".ppu-guide");
+    if (guide) panel.appendChild(guide);
+
+    var staticNote = wrapper.querySelector(".ppu-static-note");
+    if (staticNote) panel.appendChild(staticNote);
+
+    if (!panel.childNodes.length) {
+      var fallback = document.createElement("p");
+      fallback.className = "ppu-desc";
+      fallback.textContent = "파일은 1개만 업로드할 수 있습니다. 여러 파일은 ZIP으로 압축해 업로드해 주세요.";
+      panel.appendChild(fallback);
+    }
+
+    var toggle = help.querySelector("[data-ppu-help-toggle]");
+    toggle.addEventListener("click", function (event) {
+      event.preventDefault();
+      var isOpen = !help.classList.contains("ppu-help-open");
+      help.classList.toggle("ppu-help-open", isOpen);
+      toggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
+    });
   }
 
   function normalizeSearchText(value) {
@@ -784,8 +866,9 @@
       "</form>"
     ].join("");
 
+    compactUploadGuidance(wrapper);
     var target = findInsertTarget();
-    target.appendChild(wrapper);
+    insertWidget(wrapper, target);
     bindForm(wrapper);
   }
 
@@ -985,8 +1068,9 @@
       "</form>"
     ].join("");
 
+    compactUploadGuidance(wrapper);
     var target = findInsertTarget();
-    target.appendChild(wrapper);
+    insertWidget(wrapper, target);
     bindForm(wrapper);
   }
 
@@ -1004,6 +1088,7 @@
     var isUploading = false;
     var pendingDroppedFile = null;
     var availabilityTimer = null;
+    var readinessBurstTimers = [];
 
     fileInput.removeAttribute("multiple");
 
@@ -1070,13 +1155,30 @@
       availabilityTimer = setTimeout(function () {
         availabilityTimer = null;
         refreshUploadAvailability();
-      }, 120);
+      }, 40);
+    }
+
+    function clearReadinessBurstTimers() {
+      for (var i = 0; i < readinessBurstTimers.length; i += 1) {
+        clearTimeout(readinessBurstTimers[i]);
+      }
+      readinessBurstTimers = [];
+    }
+
+    function scheduleReadinessRefreshBurst() {
+      clearReadinessBurstTimers();
+      refreshUploadAvailability();
+      [80, 200, 500].forEach(function (delay) {
+        readinessBurstTimers.push(setTimeout(function () {
+          refreshUploadAvailability();
+        }, delay));
+      });
     }
 
     refreshUploadAvailability();
 
     if (window.MutationObserver) {
-      var optionObserver = new MutationObserver(scheduleUploadAvailabilityRefresh);
+      var optionObserver = new MutationObserver(scheduleReadinessRefreshBurst);
       optionObserver.observe(document.body, {
         childList: true,
         subtree: true,
@@ -1086,7 +1188,7 @@
     }
 
     ["click", "change", "input"].forEach(function (eventName) {
-      document.addEventListener(eventName, scheduleUploadAvailabilityRefresh, true);
+      document.addEventListener(eventName, scheduleReadinessRefreshBurst, true);
     });
 
     function submitUploadForm() {
