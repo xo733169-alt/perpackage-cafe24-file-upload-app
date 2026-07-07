@@ -345,6 +345,36 @@
     return null;
   }
 
+  function findFileIdInputByCafe24AddOption() {
+    var hiddenFields = document.querySelectorAll("input[type='hidden'][name^='add_option_']");
+
+    for (var i = 0; i < hiddenFields.length; i += 1) {
+      var hiddenField = hiddenFields[i];
+      if (hiddenField.closest && hiddenField.closest("#" + WIDGET_ID)) continue;
+      if (!includesFileIdLabel(hiddenField.value)) continue;
+
+      var container = hiddenField.closest && hiddenField.closest("td, li, dd, div");
+      var fieldInContainer = findFirstUsableField(container);
+      if (fieldInContainer) {
+        return {
+          element: fieldInContainer,
+          source: "cafe24:add_option_hidden_value"
+        };
+      }
+
+      var row = hiddenField.closest && hiddenField.closest("tr");
+      var fieldInRow = findFirstUsableField(row);
+      if (fieldInRow) {
+        return {
+          element: fieldInRow,
+          source: "cafe24:add_option_row"
+        };
+      }
+    }
+
+    return null;
+  }
+
   function findFieldNearLabelElement(labelElement) {
     if (!labelElement) return null;
 
@@ -405,6 +435,7 @@
   function findFileIdInput() {
     return (
       resolveConfiguredFileIdInput() ||
+      findFileIdInputByCafe24AddOption() ||
       findFileIdInputByAttributes() ||
       findFileIdInputByLabelText()
     );
