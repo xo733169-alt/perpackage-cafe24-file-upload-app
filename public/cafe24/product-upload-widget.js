@@ -340,6 +340,7 @@
   function getSelectedProductSelector() {
     return joinSelectors([
       CONFIG.selectedProductSelector,
+      "#totalProducts tbody.option_products > tr.option_product",
       "#totalProducts tbody.option_products tr",
       "#totalProducts tbody.add_products tr",
       "#totalProducts tbody tr",
@@ -357,7 +358,11 @@
     if (className.indexOf("displaynone") !== -1 || className.indexOf("display-none") !== -1) return true;
 
     var text = normalizeSearchText(element.textContent || "");
-    if (!text) return true;
+    if (!text && !element.querySelector("input:not([type='hidden']), select, textarea, button, a")) return true;
+    if (element.matches && element.matches("#totalProducts tbody.option_products > tr.option_product")) {
+      var optionBoxIdInput = element.querySelector('input.option_box_id[name="item_code[]"]');
+      return !optionBoxIdInput || !optionBoxIdInput.value || !optionBoxIdInput.value.trim();
+    }
     if (text.indexOf("option_product_no") !== -1) return true;
 
     return false;
