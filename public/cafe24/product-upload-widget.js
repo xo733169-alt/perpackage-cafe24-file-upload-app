@@ -199,6 +199,41 @@
     return true;
   }
 
+  function isElementVisible(element) {
+    if (!element || !document.documentElement.contains(element)) return false;
+
+    var current = element;
+    while (current && current.nodeType === 1 && current !== document.documentElement) {
+      if (current.hidden || current.getAttribute("aria-hidden") === "true") return false;
+
+      if (window.getComputedStyle) {
+        var style = window.getComputedStyle(current);
+        if (style.display === "none" || style.visibility === "hidden") return false;
+      }
+
+      current = current.parentElement;
+    }
+
+    if (element.getClientRects && element.getClientRects().length > 0) return true;
+    return !!(element.offsetWidth || element.offsetHeight);
+  }
+
+  function isFileIdInputUsable(match) {
+    if (!match || !match.element) return false;
+
+    var element = match.element;
+    var tagName = String(element.tagName || "").toLowerCase();
+    if (tagName !== "input" && tagName !== "textarea") return false;
+    if (element.disabled) return false;
+
+    if (tagName === "input") {
+      var inputType = String(element.getAttribute("type") || "text").toLowerCase();
+      if (inputType === "hidden") return false;
+    }
+
+    return isElementVisible(element);
+  }
+
   function getInputSearchText(element) {
     var parts = [];
     var attributes = ["name", "id", "placeholder", "title", "aria-label"];
@@ -300,6 +335,103 @@
       CONFIG.mobileOrderActionSelector,
       DEFAULT_ORDER_ACTION_SELECTOR
     ]);
+  }
+
+  function getSelectedProductSelector() {
+    return joinSelectors([
+      CONFIG.selectedProductSelector,
+      "#totalProducts tbody.option_products tr",
+      "#totalProducts tbody.add_products tr",
+      "#totalProducts tbody tr",
+      ".option_products tr",
+      ".add_products tr",
+      ".option_products li",
+      ".add_products li"
+    ]);
+  }
+
+  function looksLikeEmptySelectedProductRow(element) {
+    if (!element) return true;
+
+    var className = normalizeSearchText(element.className || "");
+    if (className.indexOf("displaynone") !== -1 || className.indexOf("display-none") !== -1) return true;
+
+    var text = normalizeSearchText(element.textContent || "");
+    if (!text) return true;
+    if (text.indexOf("option_product_no") !== -1) return true;
+
+    return false;
+  }
+
+  function hasVisibleSelectedProductRow() {
+    var selector = getSelectedProductSelector();
+    if (!selector) return false;
+
+    var rows;
+    try {
+      rows = document.querySelectorAll(selector);
+    } catch (error) {
+      return false;
+    }
+
+    for (var i = 0; i < rows.length; i += 1) {
+      var row = rows[i];
+      if (row.closest && row.closest("#" + WIDGET_ID)) continue;
+      if (!isElementVisible(row)) continue;
+      if (looksLikeEmptySelectedProductRow(row)) continue;
+      return true;
+    }
+
+    return false;
+  }
+
+  function getTotalPriceState() {
+    var selectors = joinSelectors([
+      CONFIG.totalPriceSelector,
+      "#totalPrice",
+      ".totalPrice",
+      ".total_price",
+      ".total_price_box"
+    ]);
+
+    if (!selectors) return "unknown";
+
+    var elements;
+    try {
+      elements = document.querySelectorAll(selectors);
+    } catch (error) {
+      return "unknown";
+    }
+
+    var foundVisibleTotal = false;
+    var foundNumber = false;
+
+    for (var i = 0; i < elements.length; i += 1) {
+      var element = elements[i];
+      if (!isElementVisible(element)) continue;
+      foundVisibleTotal = true;
+
+      var text = String(element.textContent || "").replace(/,/g, "");
+      var matches = text.match(/\d+/g);
+      if (!matches) continue;
+      foundNumber = true;
+
+      for (var j = 0; j < matches.length; j += 1) {
+        if (Number(matches[j]) > 0) return "nonzero";
+      }
+    }
+
+    if (foundVisibleTotal && foundNumber) return "zero";
+    return "unknown";
+  }
+
+  function hasSelectedProductState() {
+    if (!hasVisibleSelectedProductRow()) return false;
+    return getTotalPriceState() !== "zero";
+  }
+
+  function isUploadReady(match) {
+    return isFileIdInputUsable(match) && hasSelectedProductState();
   }
 
   function closestBySelector(target, selector) {
@@ -876,7 +1008,7 @@
     fileInput.removeAttribute("multiple");
 
     function setUploadAvailability(match) {
-      var isReady = !!(match && match.element);
+      var isReady = isUploadReady(match);
 
       wrapper.classList.toggle("ppu-is-ready", isReady);
       fileInput.disabled = !isReady || isUploading;
@@ -895,18 +1027,39 @@
       return isReady;
     }
 
+    function clearUploadStateBecauseOptionNotReady(match) {
+      var fieldToClear = currentUpload && currentUpload.fileIdInputMatch
+        ? currentUpload.fileIdInputMatch
+        : (lastFileIdInputMatch || match);
+
+      if (fieldToClear && fieldToClear.element && document.documentElement.contains(fieldToClear.element)) {
+        clearFileIdInput(fieldToClear);
+      }
+
+      currentUpload = null;
+      lastFileIdInputMatch = null;
+      pendingDroppedFile = null;
+      fileInput.value = "";
+      result.hidden = true;
+      result.textContent = "";
+    }
+
     function refreshUploadAvailability() {
       var knownMatch = currentUpload && currentUpload.fileIdInputMatch
         ? currentUpload.fileIdInputMatch
         : lastFileIdInputMatch;
       var match = findFileIdInput();
 
-      if (!match && knownMatch && knownMatch.element && document.documentElement.contains(knownMatch.element)) {
+      if (!isUploadReady(match) && knownMatch && knownMatch.element && document.documentElement.contains(knownMatch.element)) {
         match = knownMatch;
       }
 
-      setUploadAvailability(match);
-      return match;
+      if (setUploadAvailability(match)) {
+        return match;
+      }
+
+      clearUploadStateBecauseOptionNotReady(match);
+      return null;
     }
 
     function scheduleUploadAvailabilityRefresh() {
@@ -928,9 +1081,13 @@
         childList: true,
         subtree: true,
         attributes: true,
-        attributeFilter: ["placeholder", "class", "style", "value"]
+        attributeFilter: ["placeholder", "class", "style", "disabled", "value", "selected", "hidden", "aria-hidden"]
       });
     }
+
+    ["click", "change", "input"].forEach(function (eventName) {
+      document.addEventListener(eventName, scheduleUploadAvailabilityRefresh, true);
+    });
 
     function submitUploadForm() {
       var submitEvent;
@@ -1082,7 +1239,14 @@
       var actionElement = findOrderActionElement(event.target);
       if (!actionElement) return;
 
-      if (currentUpload && currentUpload.fileId && isFileIdInputValid(currentUpload)) return;
+      if (
+        currentUpload &&
+        currentUpload.fileId &&
+        isFileIdInputValid(currentUpload) &&
+        isUploadReady(currentUpload.fileIdInputMatch)
+      ) {
+        return;
+      }
 
       event.preventDefault();
       event.stopPropagation();
@@ -1132,7 +1296,7 @@
         return;
       }
 
-      var fileIdInputMatch = lastFileIdInputMatch || refreshUploadAvailability();
+      var fileIdInputMatch = refreshUploadAvailability();
       if (!fileIdInputMatch || !fileIdInputMatch.element) {
         status.className = "ppu-status ppu-warning";
         status.textContent = "먼저 상품 옵션을 선택해 주세요. 옵션 선택 후 파일 업로드를 진행할 수 있습니다.";
@@ -1170,6 +1334,11 @@
           });
         })
         .then(function (json) {
+          if (!isUploadReady(fileIdInputMatch)) {
+            clearUploadStateBecauseOptionNotReady(fileIdInputMatch);
+            throw new Error("product option is no longer ready");
+          }
+
           var uploaded = json.file || {};
           var fileId = uploaded.id || json.id || "";
           var cafe24InputResult = applyFileIdToCafe24Input(fileId, fileIdInputMatch);
@@ -1224,9 +1393,9 @@
       if (!editorFileId || !/^[0-9a-zA-Z-]{8,64}$/.test(editorFileId)) return;
 
       var tryApply = function () {
-        if (currentUpload && currentUpload.fileId) return true;
+        if (currentUpload && currentUpload.fileId && isUploadReady(currentUpload.fileIdInputMatch)) return true;
 
-        var match = findFileIdInput();
+        var match = refreshUploadAvailability();
         if (!match || !match.element) return false;
 
         var applied = applyFileIdToCafe24Input(editorFileId, match);
