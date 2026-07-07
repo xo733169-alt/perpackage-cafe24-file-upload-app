@@ -351,18 +351,40 @@
     ]);
   }
 
+  function getOptionBoxIdInput(element) {
+    if (!element || !element.querySelector) return null;
+    return element.querySelector('input.option_box_id[name="item_code[]"]');
+  }
+
+  function hasNonEmptyOptionBoxId(element) {
+    var optionBoxIdInput = getOptionBoxIdInput(element);
+    return !!(optionBoxIdInput && optionBoxIdInput.value && optionBoxIdInput.value.trim());
+  }
+
+  function requiresOptionBoxIdValidation(element) {
+    if (!element || !element.matches) return false;
+    return (
+      element.matches("#totalProducts tbody.option_products > tr.option_product") ||
+      element.matches("#totalProducts tbody.option_products tr") ||
+      element.matches("#totalProducts tbody.add_products tr") ||
+      element.matches("#totalProducts tbody tr") ||
+      element.matches(".option_products tr") ||
+      element.matches(".add_products tr")
+    );
+  }
+
   function looksLikeEmptySelectedProductRow(element) {
     if (!element) return true;
 
     var className = normalizeSearchText(element.className || "");
     if (className.indexOf("displaynone") !== -1 || className.indexOf("display-none") !== -1) return true;
 
+    if (requiresOptionBoxIdValidation(element)) {
+      return !hasNonEmptyOptionBoxId(element);
+    }
+
     var text = normalizeSearchText(element.textContent || "");
     if (!text && !element.querySelector("input:not([type='hidden']), select, textarea, button, a")) return true;
-    if (element.matches && element.matches("#totalProducts tbody.option_products > tr.option_product")) {
-      var optionBoxIdInput = element.querySelector('input.option_box_id[name="item_code[]"]');
-      return !optionBoxIdInput || !optionBoxIdInput.value || !optionBoxIdInput.value.trim();
-    }
     if (text.indexOf("option_product_no") !== -1) return true;
 
     return false;
@@ -900,6 +922,14 @@
         .then(function (json) {
           var uploaded = json.file || {};
           var fileId = uploaded.id || json.id || "";
+
+          if (!hasVisibleSelectedProductRow()) {
+            currentUpload = null;
+            pendingDroppedFile = null;
+            fileInput.value = "";
+            return;
+          }
+
           var cafe24InputResult = applyFileIdToCafe24Input(fileId, fileIdInputMatch);
           currentUpload = {
             uploaded: uploaded,
@@ -1008,7 +1038,7 @@
     var lastFileIdInputMatch = null;
     var isUploading = false;
     var pendingDroppedFile = null;
-    var availabilityTimer = null;
+    var availabilityTimers = [];
     var pendingApplyTimer = null;
 
     fileInput.removeAttribute("multiple");
@@ -1045,6 +1075,10 @@
       currentUpload = null;
       lastFileIdInputMatch = null;
       pendingDroppedFile = null;
+      if (pendingApplyTimer) {
+        clearTimeout(pendingApplyTimer);
+        pendingApplyTimer = null;
+      }
       fileInput.value = "";
       result.hidden = true;
       result.textContent = "";
@@ -1069,14 +1103,20 @@
     }
 
     function scheduleUploadAvailabilityRefresh() {
-      if (availabilityTimer) {
-        clearTimeout(availabilityTimer);
-      }
+      var delays = [50, 150, 300, 600, 1000];
 
-      availabilityTimer = setTimeout(function () {
-        availabilityTimer = null;
-        refreshUploadAvailability();
-      }, 120);
+      for (var i = 0; i < availabilityTimers.length; i += 1) {
+        clearTimeout(availabilityTimers[i]);
+      }
+      availabilityTimers = [];
+
+      refreshUploadAvailability();
+
+      for (var j = 0; j < delays.length; j += 1) {
+        availabilityTimers.push(setTimeout(function () {
+          refreshUploadAvailability();
+        }, delays[j]));
+      }
     }
 
     setUploadAvailability = function (match) {
@@ -1133,9 +1173,11 @@
     refreshUploadAvailability = function () {
       var match = findFileIdInput();
       setUploadAvailability(match);
-      if (hasVisibleSelectedProductRow()) {
-        syncCurrentUploadToCafe24Input(match);
+      if (!hasVisibleSelectedProductRow()) {
+        clearUploadStateBecauseOptionNotReady(match);
+        return null;
       }
+      syncCurrentUploadToCafe24Input(match);
       return match || lastFileIdInputMatch || null;
     };
 
@@ -1158,7 +1200,7 @@
         childList: true,
         subtree: true,
         attributes: true,
-        attributeFilter: ["placeholder", "class", "style", "disabled", "value", "selected", "hidden", "aria-hidden"]
+        attributeFilter: ["placeholder", "class", "style", "disabled", "value", "selected", "checked", "hidden", "aria-hidden"]
       });
     }
 
