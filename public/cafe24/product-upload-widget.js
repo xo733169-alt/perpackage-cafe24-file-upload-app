@@ -7,13 +7,6 @@
   var DEFAULT_BUY_BUTTON_SELECTOR = "a[onclick*='product_submit(1,']";
   var DEFAULT_CART_BUTTON_SELECTOR = "a[onclick*='product_submit(2,']";
   var DEFAULT_ORDER_ACTION_SELECTOR = DEFAULT_BUY_BUTTON_SELECTOR + ", " + DEFAULT_CART_BUTTON_SELECTOR;
-  var DEBUG_ENABLED = (function () {
-    try {
-      return new URLSearchParams(window.location.search).get("ppu_debug") === "1";
-    } catch (error) {
-      return false;
-    }
-  })();
 
   if (document.getElementById(WIDGET_ID)) {
     return;
@@ -54,11 +47,6 @@
     }
 
     return "";
-  }
-
-  function debugLog(label, details) {
-    if (!DEBUG_ENABLED || !window.console || typeof window.console.debug !== "function") return;
-    window.console.debug("[perpackage-upload] " + label, details || {});
   }
 
   function getProductNoFromGlobals() {
@@ -444,23 +432,6 @@
 
   function isUploadReady(match) {
     return isFileIdInputUsable(match) && hasSelectedProductState();
-  }
-
-  function getUploadReadinessDebugState(match) {
-    var inputUsable = isFileIdInputUsable(match);
-    var hasRow = hasVisibleSelectedProductRow();
-    var totalPriceState = getTotalPriceState();
-
-    return {
-      ready: inputUsable && hasRow && totalPriceState !== "zero",
-      inputUsable: inputUsable,
-      inputSource: match && match.source ? match.source : null,
-      inputName: match && match.element ? match.element.getAttribute("name") : null,
-      inputId: match && match.element ? match.element.id || null : null,
-      inputValueLength: match && match.element ? String(match.element.value || "").length : 0,
-      hasVisibleSelectedProductRow: hasRow,
-      totalPriceState: totalPriceState
-    };
   }
 
   function closestBySelector(target, selector) {
@@ -1032,11 +1003,11 @@
     var lastFileIdInputMatch = null;
     var isUploading = false;
     var pendingDroppedFile = null;
-    var availabilityTimers = [];
+    var availabilityTimer = null;
 
     fileInput.removeAttribute("multiple");
 
-    function setUploadAvailability(match, reason) {
+    function setUploadAvailability(match) {
       var isReady = isUploadReady(match);
 
       wrapper.classList.toggle("ppu-is-ready", isReady);
@@ -1051,16 +1022,6 @@
 
       if (isReady) {
         lastFileIdInputMatch = match;
-      }
-
-      if (DEBUG_ENABLED) {
-        var debugState = getUploadReadinessDebugState(match);
-        debugState.reason = reason || "unknown";
-        debugState.isUploading = isUploading;
-        debugState.fileInputDisabled = fileInput.disabled;
-        debugState.buttonDisabled = button.disabled;
-        debugState.hasCurrentUpload = !!(currentUpload && currentUpload.fileId);
-        debugLog("readiness", debugState);
       }
 
       return isReady;
@@ -1081,14 +1042,9 @@
       fileInput.value = "";
       result.hidden = true;
       result.textContent = "";
-
-      debugLog("clear-option-not-ready", {
-        inputSource: fieldToClear && fieldToClear.source ? fieldToClear.source : null,
-        reason: "option_not_ready"
-      });
     }
 
-    function refreshUploadAvailability(reason) {
+    function refreshUploadAvailability() {
       var knownMatch = currentUpload && currentUpload.fileIdInputMatch
         ? currentUpload.fileIdInputMatch
         : lastFileIdInputMatch;
@@ -1098,7 +1054,7 @@
         match = knownMatch;
       }
 
-      if (setUploadAvailability(match, reason)) {
+      if (setUploadAvailability(match)) {
         return match;
       }
 
@@ -1106,43 +1062,31 @@
       return null;
     }
 
-    function clearAvailabilityTimers() {
-      for (var i = 0; i < availabilityTimers.length; i += 1) {
-        clearTimeout(availabilityTimers[i]);
+    function scheduleUploadAvailabilityRefresh() {
+      if (availabilityTimer) {
+        clearTimeout(availabilityTimer);
       }
-      availabilityTimers = [];
+
+      availabilityTimer = setTimeout(function () {
+        availabilityTimer = null;
+        refreshUploadAvailability();
+      }, 120);
     }
 
-    function scheduleUploadAvailabilityRefresh(reason) {
-      clearAvailabilityTimers();
-      refreshUploadAvailability(reason || "scheduled");
-
-      [0, 80, 200, 500].forEach(function (delay) {
-        var timer = setTimeout(function () {
-          refreshUploadAvailability((reason || "scheduled") + "+" + delay + "ms");
-        }, delay);
-        availabilityTimers.push(timer);
-      });
-    }
-
-    refreshUploadAvailability("initial");
+    refreshUploadAvailability();
 
     if (window.MutationObserver) {
-      var optionObserver = new MutationObserver(function () {
-        scheduleUploadAvailabilityRefresh("mutation");
-      });
+      var optionObserver = new MutationObserver(scheduleUploadAvailabilityRefresh);
       optionObserver.observe(document.body, {
         childList: true,
         subtree: true,
         attributes: true,
-        attributeFilter: ["placeholder", "class", "style", "disabled", "value", "selected", "checked", "hidden", "aria-hidden"]
+        attributeFilter: ["placeholder", "class", "style", "disabled", "value", "selected", "hidden", "aria-hidden"]
       });
     }
 
-    ["click", "change", "input", "keyup", "touchend"].forEach(function (eventName) {
-      document.addEventListener(eventName, function () {
-        scheduleUploadAvailabilityRefresh(eventName);
-      }, true);
+    ["click", "change", "input"].forEach(function (eventName) {
+      document.addEventListener(eventName, scheduleUploadAvailabilityRefresh, true);
     });
 
     function submitUploadForm() {
