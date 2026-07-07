@@ -968,7 +968,7 @@
       '여러 파일을 전달해야 하는 경우 AI, PDF, 이미지, 칼선 파일 등을 하나의 ZIP 파일로 압축해 업로드해 주세요.<br>',
       '업로드 완료 후 생성되는 업로드 파일 ID는 파일 확인을 위한 값입니다. 주문 과정에서 해당 값을 수정하지 말아 주세요.',
       "</div>",
-      '<p class="ppu-option-gate" data-ppu-option-gate>상품 옵션을 먼저 선택해 주세요. 옵션 선택 후 파일 업로드 영역이 활성화됩니다.</p>',
+      '<p class="ppu-option-gate" data-ppu-option-gate>파일 업로드는 선택사항입니다. 파일 없이도 구매할 수 있으며, 업로드가 완료되면 주문 옵션 입력칸이 준비되는 즉시 업로드 파일 ID가 자동 입력됩니다.</p>',
       '<form class="ppu-form">',
       '<p class="ppu-file-help">파일을 선택하면 자동으로 업로드됩니다. PC에서는 아래 영역으로 파일을 끌어다 놓을 수 있습니다.</p>',
       '<p class="ppu-file-help">파일명에는 업체명 또는 상품명을 포함해 주시면 확인이 더 쉽습니다.</p>',
@@ -1004,6 +1004,7 @@
     var isUploading = false;
     var pendingDroppedFile = null;
     var availabilityTimer = null;
+    var pendingApplyTimer = null;
 
     fileInput.removeAttribute("multiple");
 
@@ -1071,6 +1072,77 @@
         availabilityTimer = null;
         refreshUploadAvailability();
       }, 120);
+    }
+
+    setUploadAvailability = function (match) {
+      var hasSelectedRow = hasVisibleSelectedProductRow();
+
+      wrapper.classList.toggle("ppu-is-ready", hasSelectedRow);
+      fileInput.disabled = !hasSelectedRow || isUploading;
+      button.disabled = !hasSelectedRow || isUploading;
+
+      if (optionGate) {
+        optionGate.textContent = hasSelectedRow
+          ? "파일 업로드는 선택사항입니다. 파일 없이도 구매할 수 있으며, 업로드가 완료되면 주문 옵션 입력칸에 업로드 파일 ID가 자동 입력됩니다."
+          : "상품 옵션을 선택하면 파일 업로드 영역이 표시됩니다. 파일 업로드는 선택사항이며, 파일 없이도 구매할 수 있습니다.";
+      }
+
+      if (match && match.element) {
+        lastFileIdInputMatch = match;
+      }
+
+      return match || null;
+    };
+
+    function syncCurrentUploadToCafe24Input(match) {
+      if (!currentUpload || !currentUpload.fileId) return null;
+      if (currentUpload.fileIdInputMatch && isFileIdInputValid(currentUpload)) {
+        return currentUpload.fileIdInputMatch;
+      }
+
+      var preferredMatch = match || currentUpload.fileIdInputMatch || lastFileIdInputMatch;
+      var syncResult = applyFileIdToCafe24Input(currentUpload.fileId, preferredMatch);
+      currentUpload.cafe24InputResult = syncResult;
+
+      if (syncResult.status !== "success") {
+        return null;
+      }
+
+      currentUpload.fileIdInputMatch = {
+        element: syncResult.element || (preferredMatch && preferredMatch.element),
+        source: syncResult.source
+      };
+      lastFileIdInputMatch = currentUpload.fileIdInputMatch;
+      makeFileIdInputReadonly(currentUpload.fileIdInputMatch, currentUpload.fileId);
+      watchFileIdInput(currentUpload, status, result);
+
+      if (!result.hidden) {
+        status.className = "ppu-status ppu-success";
+        status.textContent = "업로드 파일 ID가 주문 옵션 입력칸에 반영되었습니다.";
+        renderUploadResult(result, currentUpload.uploaded, currentUpload.fileId, syncResult);
+      }
+
+      return currentUpload.fileIdInputMatch;
+    }
+
+    refreshUploadAvailability = function () {
+      var match = findFileIdInput();
+      setUploadAvailability(match);
+      if (hasVisibleSelectedProductRow()) {
+        syncCurrentUploadToCafe24Input(match);
+      }
+      return match || lastFileIdInputMatch || null;
+    };
+
+    function schedulePendingFileIdApply() {
+      if (pendingApplyTimer) {
+        clearTimeout(pendingApplyTimer);
+      }
+
+      pendingApplyTimer = setTimeout(function () {
+        pendingApplyTimer = null;
+        refreshUploadAvailability();
+      }, 250);
     }
 
     refreshUploadAvailability();
@@ -1149,7 +1221,7 @@
           renderUploadResult(result, currentUpload.uploaded, currentUpload.fileId, retryResult);
         } else {
           status.className = "ppu-status ppu-warning";
-          status.textContent = "상품 옵션을 먼저 선택한 뒤 다시 눌러주세요.";
+          status.textContent = "주문 옵션 입력칸이 준비되면 업로드 파일 ID가 자동 반영됩니다. 필요하면 잠시 후 다시 눌러주세요.";
           renderUploadResult(result, currentUpload.uploaded, currentUpload.fileId, retryResult);
         }
       }
@@ -1209,10 +1281,7 @@
         event.preventDefault();
         event.stopPropagation();
 
-        if (!refreshUploadAvailability()) {
-          showMessage(status, result, "상품 옵션을 먼저 선택해 주세요. 옵션 선택 후 파일 업로드를 진행할 수 있습니다.", true);
-          return;
-        }
+        refreshUploadAvailability();
 
         if (isUploading) {
           showMessage(status, result, "파일을 업로드하는 중입니다. 잠시만 기다려 주세요.", true);
@@ -1247,6 +1316,8 @@
         showMessage(status, result, "파일을 업로드하는 중입니다. 업로드가 완료된 뒤 구매하기 또는 장바구니를 진행해 주세요.", true);
         return;
       }
+
+      refreshUploadAvailability();
 
       // File upload is optional; allow order actions unless an uploaded file_id was changed to another non-empty value.
       if (!currentUpload || !currentUpload.fileId) return;
@@ -1292,13 +1363,6 @@
       }
 
       var fileIdInputMatch = refreshUploadAvailability();
-      if (!fileIdInputMatch || !fileIdInputMatch.element) {
-        status.className = "ppu-status ppu-warning";
-        status.textContent = "먼저 상품 옵션을 선택해 주세요. 옵션 선택 후 파일 업로드를 진행할 수 있습니다.";
-        result.hidden = true;
-        result.textContent = "";
-        return;
-      }
 
       var formData = new FormData();
       formData.append("file", file);
@@ -1329,11 +1393,6 @@
           });
         })
         .then(function (json) {
-          if (!isUploadReady(fileIdInputMatch)) {
-            clearUploadStateBecauseOptionNotReady(fileIdInputMatch);
-            throw new Error("product option is no longer ready");
-          }
-
           var uploaded = json.file || {};
           var fileId = uploaded.id || json.id || "";
           var cafe24InputResult = applyFileIdToCafe24Input(fileId, fileIdInputMatch);
@@ -1352,11 +1411,16 @@
             lastFileIdInputMatch = currentUpload.fileIdInputMatch;
             makeFileIdInputReadonly(currentUpload.fileIdInputMatch, fileId);
             watchFileIdInput(currentUpload, status, result);
+          } else {
+            schedulePendingFileIdApply();
+            setTimeout(schedulePendingFileIdApply, 800);
+            setTimeout(schedulePendingFileIdApply, 1500);
+            setTimeout(schedulePendingFileIdApply, 3000);
           }
           status.className = "ppu-status ppu-success";
           status.textContent = cafe24InputResult.status === "success"
             ? "파일 업로드가 완료되었습니다. 주문 시 업로드 파일 ID가 함께 전달됩니다."
-            : "파일 업로드가 완료되었습니다. 상품 옵션을 선택한 뒤 업로드 파일 ID 다시 입력하기를 눌러주세요.";
+            : "파일 업로드가 완료되었습니다. 주문 옵션 입력칸이 준비되면 업로드 파일 ID가 자동 입력됩니다.";
           renderUploadResult(result, uploaded, fileId, cafe24InputResult);
           form.reset();
           pendingDroppedFile = null;
