@@ -800,6 +800,9 @@
     var wrapper = document.createElement("section");
     wrapper.id = WIDGET_ID;
     wrapper.setAttribute("aria-label", "Perpackage print file upload");
+    wrapper.hidden = true;
+    wrapper.style.display = "none";
+    wrapper.setAttribute("aria-hidden", "true");
     wrapper.innerHTML = [
       '<h3 class="ppu-title">인쇄파일 업로드</h3>',
       '<p class="ppu-desc">AI, PDF, ZIP, DXF 파일 업로드를 권장합니다. 파일 확인 후 필요한 경우 별도로 안내드립니다.</p>',
@@ -974,6 +977,9 @@
     var wrapper = document.createElement("section");
     wrapper.id = WIDGET_ID;
     wrapper.setAttribute("aria-label", "Perpackage print file upload");
+    wrapper.hidden = true;
+    wrapper.style.display = "none";
+    wrapper.setAttribute("aria-hidden", "true");
     wrapper.innerHTML = [
       '<h3 class="ppu-title">인쇄용 파일 업로드</h3>',
       '<p class="ppu-desc">인쇄용 파일을 업로드해 주세요.</p>',
@@ -1137,6 +1143,9 @@
     setUploadAvailability = function (match) {
       var hasSelectedRow = hasVisibleSelectedProductRow();
 
+      wrapper.hidden = !hasSelectedRow;
+      wrapper.style.display = hasSelectedRow ? "" : "none";
+      wrapper.setAttribute("aria-hidden", hasSelectedRow ? "false" : "true");
       wrapper.classList.toggle("ppu-is-ready", hasSelectedRow);
       fileInput.disabled = !hasSelectedRow || isUploading;
       button.disabled = !hasSelectedRow || isUploading;
