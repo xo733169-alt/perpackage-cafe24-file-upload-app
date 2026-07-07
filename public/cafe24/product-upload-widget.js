@@ -4,6 +4,9 @@
   var WIDGET_ID = "app-perpackage-product-upload";
   var STYLE_ID = "app-perpackage-product-upload-style";
   var CONFIG = window.PERPACKAGE_PRODUCT_UPLOAD_CONFIG || {};
+  var DEFAULT_BUY_BUTTON_SELECTOR = "a[onclick*='product_submit(1,']";
+  var DEFAULT_CART_BUTTON_SELECTOR = "a[onclick*='product_submit(2,']";
+  var DEFAULT_ORDER_ACTION_SELECTOR = DEFAULT_BUY_BUTTON_SELECTOR + ", " + DEFAULT_CART_BUTTON_SELECTOR;
 
   if (document.getElementById(WIDGET_ID)) {
     return;
@@ -97,8 +100,17 @@
       "#app-perpackage-product-upload .ppu-file-help{margin:0;font-size:12px;line-height:1.55;color:#5b6680}",
       "#app-perpackage-product-upload .ppu-static-note{margin:10px 0 0;padding:10px 12px;border:1px solid #dbe5f5;border-radius:8px;background:#f7faff;font-size:12px;line-height:1.6;color:#4b5875}",
       "#app-perpackage-product-upload .ppu-static-note strong{color:#2A408C;font-weight:700}",
+      "#app-perpackage-product-upload .ppu-option-gate{margin:12px 0 0;padding:11px 12px;border:1px solid #f3c969;border-radius:8px;background:#fff9e8;color:#8a5a00;font-size:12px;line-height:1.6}",
+      "#app-perpackage-product-upload.ppu-is-ready .ppu-option-gate{border-color:#c8d9f5;background:#f7faff;color:#2A408C}",
+      "#app-perpackage-product-upload .ppu-upload-controls{display:none;gap:10px}",
+      "#app-perpackage-product-upload.ppu-is-ready .ppu-upload-controls{display:grid}",
+      "#app-perpackage-product-upload .ppu-dropzone{display:grid;gap:5px;width:100%;min-height:96px;padding:18px;border:1px dashed #9fb1d4;border-radius:8px;background:#f8fbff;color:#1f2a44;text-align:center;cursor:pointer;align-content:center;transition:border-color .15s ease,background .15s ease}",
+      "#app-perpackage-product-upload .ppu-dropzone:hover,#app-perpackage-product-upload .ppu-dropzone.ppu-is-dragover{border-color:#2A408C;background:#eef4ff}",
+      "#app-perpackage-product-upload .ppu-drop-title{font-size:14px;font-weight:700;color:#15213b}",
+      "#app-perpackage-product-upload .ppu-drop-desc{font-size:12px;line-height:1.5;color:#5b6680}",
+      "#app-perpackage-product-upload .ppu-upload-controls .ppu-button{display:none}",
       "#app-perpackage-product-upload .ppu-file-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center}",
-      "#app-perpackage-product-upload .ppu-file{width:100%;min-width:0;padding:10px;border:1px solid #cfd8ea;border-radius:6px;background:#fff;font-size:13px;color:#1f2a44}",
+      "#app-perpackage-product-upload .ppu-file{position:absolute;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none}",
       "#app-perpackage-product-upload .ppu-button{width:100%;min-width:128px;max-width:180px;padding:10px 14px;border:0;border-radius:6px;background:#2A408C;color:#fff;font-size:14px;font-weight:700;cursor:pointer;white-space:nowrap}",
       "#app-perpackage-product-upload .ppu-button:disabled{background:#8b97ba;cursor:not-allowed}",
       "#app-perpackage-product-upload .ppu-status{margin:2px 0 0;font-size:13px;line-height:1.55;color:#4b5875}",
@@ -267,6 +279,51 @@
     }
 
     return String(value).replace(/'/g, "\\'");
+  }
+
+  function joinSelectors(selectors) {
+    var result = [];
+
+    for (var i = 0; i < selectors.length; i += 1) {
+      var selector = String(selectors[i] || "").trim();
+      if (selector) result.push(selector);
+    }
+
+    return result.join(", ");
+  }
+
+  function getOrderActionSelector() {
+    return joinSelectors([
+      CONFIG.orderActionSelector,
+      CONFIG.buyButtonSelector || DEFAULT_BUY_BUTTON_SELECTOR,
+      CONFIG.cartButtonSelector || DEFAULT_CART_BUTTON_SELECTOR,
+      CONFIG.mobileOrderActionSelector,
+      DEFAULT_ORDER_ACTION_SELECTOR
+    ]);
+  }
+
+  function closestBySelector(target, selector) {
+    if (!target || !target.closest || !selector) return null;
+
+    try {
+      return target.closest(selector);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function findOrderActionElement(target) {
+    var configuredAction = closestBySelector(target, getOrderActionSelector());
+    if (configuredAction) return configuredAction;
+
+    var actionElement = target && target.closest && target.closest("a, button, input[type='button'], input[type='submit']");
+    if (!actionElement || !looksLikeOrderAction(actionElement)) return null;
+
+    if (actionElement.closest && actionElement.closest(".xans-product-detail, #prdDetail, form[action*='basket']")) {
+      return actionElement;
+    }
+
+    return null;
   }
 
   function findFileIdInputByAttributes() {
@@ -496,6 +553,8 @@
       element.getAttribute && element.getAttribute("name")
     ].join(" ");
     var normalized = normalizeSearchText(text);
+
+    if (normalized.indexOf("product_submit") !== -1) return true;
 
     return (
       normalized.indexOf("구매") !== -1 ||
@@ -746,11 +805,16 @@
       '여러 파일을 전달해야 하는 경우 AI, PDF, 이미지, 칼선 파일 등을 하나의 ZIP 파일로 압축해 업로드해 주세요.<br>',
       '업로드 완료 후 생성되는 업로드 파일 ID는 파일 확인을 위한 값입니다. 주문 과정에서 해당 값을 수정하지 말아 주세요.',
       "</div>",
+      '<p class="ppu-option-gate" data-ppu-option-gate>상품 옵션을 먼저 선택해 주세요. 옵션 선택 후 파일 업로드 영역이 활성화됩니다.</p>',
       '<form class="ppu-form">',
-      '<p class="ppu-file-help">파일을 선택한 뒤 업로드 버튼을 눌러주세요.</p>',
+      '<p class="ppu-file-help">파일을 선택하면 자동으로 업로드됩니다. PC에서는 아래 영역으로 파일을 끌어다 놓을 수 있습니다.</p>',
       '<p class="ppu-file-help">파일명에는 업체명 또는 상품명을 포함해 주시면 확인이 더 쉽습니다.</p>',
-      '<div class="ppu-file-row">',
+      '<div class="ppu-upload-controls" data-ppu-upload-controls>',
+      '<label class="ppu-dropzone" data-ppu-dropzone>',
+      '<span class="ppu-drop-title">파일을 선택하거나 이곳에 끌어다 놓으세요</span>',
+      '<span class="ppu-drop-desc">모바일에서는 이 영역을 눌러 파일을 선택해 주세요.</span>',
       '<input class="ppu-file" name="file" type="file" required aria-label="인쇄용 파일 선택">',
+      "</label>",
       '<button class="ppu-button" type="submit">파일 업로드</button>',
       "</div>",
       '<p class="ppu-status" role="status"></p>',
@@ -769,11 +833,101 @@
     var button = wrapper.querySelector("button[type='submit']");
     var status = wrapper.querySelector(".ppu-status");
     var result = wrapper.querySelector(".ppu-result");
+    var optionGate = wrapper.querySelector("[data-ppu-option-gate]");
+    var dropzone = wrapper.querySelector("[data-ppu-dropzone]");
     var appOrigin = getAppOrigin();
     var currentUpload = null;
     var lastFileIdInputMatch = null;
+    var isUploading = false;
+    var pendingDroppedFile = null;
+    var availabilityTimer = null;
 
     fileInput.removeAttribute("multiple");
+
+    function setUploadAvailability(match) {
+      var isReady = !!(match && match.element);
+
+      wrapper.classList.toggle("ppu-is-ready", isReady);
+      fileInput.disabled = !isReady || isUploading;
+      button.disabled = !isReady || isUploading;
+
+      if (optionGate) {
+        optionGate.textContent = isReady
+          ? "상품 옵션이 선택되었습니다. 파일을 선택하거나 끌어다 놓으면 자동으로 업로드됩니다."
+          : "상품 옵션을 먼저 선택해 주세요. 옵션 선택 후 파일 업로드 영역이 활성화됩니다.";
+      }
+
+      if (isReady) {
+        lastFileIdInputMatch = match;
+      }
+
+      return isReady;
+    }
+
+    function refreshUploadAvailability() {
+      var knownMatch = currentUpload && currentUpload.fileIdInputMatch
+        ? currentUpload.fileIdInputMatch
+        : lastFileIdInputMatch;
+      var match = findFileIdInput();
+
+      if (!match && knownMatch && knownMatch.element && document.documentElement.contains(knownMatch.element)) {
+        match = knownMatch;
+      }
+
+      setUploadAvailability(match);
+      return match;
+    }
+
+    function scheduleUploadAvailabilityRefresh() {
+      if (availabilityTimer) {
+        clearTimeout(availabilityTimer);
+      }
+
+      availabilityTimer = setTimeout(function () {
+        availabilityTimer = null;
+        refreshUploadAvailability();
+      }, 120);
+    }
+
+    refreshUploadAvailability();
+
+    if (window.MutationObserver) {
+      var optionObserver = new MutationObserver(scheduleUploadAvailabilityRefresh);
+      optionObserver.observe(document.body, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ["placeholder", "class", "style", "value"]
+      });
+    }
+
+    function submitUploadForm() {
+      var submitEvent;
+
+      if (typeof Event === "function") {
+        submitEvent = new Event("submit", { bubbles: true, cancelable: true });
+      } else {
+        submitEvent = document.createEvent("Event");
+        submitEvent.initEvent("submit", true, true);
+      }
+
+      form.dispatchEvent(submitEvent);
+    }
+
+    function clearPreviousUploadForNewAttempt() {
+      var fieldToClear = currentUpload && currentUpload.fileIdInputMatch
+        ? currentUpload.fileIdInputMatch
+        : lastFileIdInputMatch;
+
+      if (fieldToClear && fieldToClear.element && document.documentElement.contains(fieldToClear.element)) {
+        clearFileIdInput(fieldToClear);
+        lastFileIdInputMatch = fieldToClear;
+      }
+
+      currentUpload = null;
+      result.hidden = true;
+      result.textContent = "";
+    }
 
     result.addEventListener("click", function (event) {
       var actionButton = event.target && event.target.closest && event.target.closest("[data-ppu-action]");
@@ -819,13 +973,14 @@
         clearFileIdInput(fieldToClear);
         lastFileIdInputMatch = fieldToClear;
         currentUpload = null;
+        pendingDroppedFile = null;
         form.reset();
         fileInput.value = "";
-        button.disabled = false;
         status.className = "ppu-status";
         status.textContent = "새 파일을 선택한 뒤 업로드 버튼을 눌러주세요.";
         result.hidden = true;
         result.textContent = "";
+        refreshUploadAvailability();
       }
     });
 
@@ -833,32 +988,109 @@
       if (getSelectedFileCount(fileInput) > 1) {
         fileInput.value = "";
         showMessage(status, result, getMultipleFilesMessage(), true);
+        return;
+      }
+
+      if (fileInput.files && fileInput.files[0]) {
+        clearPreviousUploadForNewAttempt();
+        submitUploadForm();
       }
     });
 
-    document.addEventListener("click", function (event) {
-      if (!currentUpload || !currentUpload.fileId) return;
+    if (dropzone) {
+      ["dragenter", "dragover"].forEach(function (eventName) {
+        dropzone.addEventListener(eventName, function (event) {
+          event.preventDefault();
+          event.stopPropagation();
 
-      var actionElement = event.target && event.target.closest && event.target.closest("a, button, input[type='button'], input[type='submit']");
-      if (!looksLikeOrderAction(actionElement)) return;
-      if (isFileIdInputValid(currentUpload)) return;
+          if (fileInput.disabled) {
+            return;
+          }
+
+          dropzone.classList.add("ppu-is-dragover");
+        });
+      });
+
+      ["dragleave", "dragend", "drop"].forEach(function (eventName) {
+        dropzone.addEventListener(eventName, function () {
+          dropzone.classList.remove("ppu-is-dragover");
+        });
+      });
+
+      dropzone.addEventListener("drop", function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+
+        if (!refreshUploadAvailability()) {
+          showMessage(status, result, "상품 옵션을 먼저 선택해 주세요. 옵션 선택 후 파일 업로드를 진행할 수 있습니다.", true);
+          return;
+        }
+
+        if (isUploading) {
+          showMessage(status, result, "파일을 업로드하는 중입니다. 잠시만 기다려 주세요.", true);
+          return;
+        }
+
+        var files = event.dataTransfer && event.dataTransfer.files;
+        if (!files || !files.length) return;
+
+        if (files.length > 1) {
+          fileInput.value = "";
+          pendingDroppedFile = null;
+          showMessage(status, result, getMultipleFilesMessage(), true);
+          return;
+        }
+
+        clearPreviousUploadForNewAttempt();
+        pendingDroppedFile = files[0];
+        submitUploadForm();
+      });
+    }
+
+    document.addEventListener("click", function (event) {
+      var actionElement = findOrderActionElement(event.target);
+      if (!actionElement) return;
+
+      if (currentUpload && currentUpload.fileId && isFileIdInputValid(currentUpload)) return;
 
       event.preventDefault();
       event.stopPropagation();
       if (event.stopImmediatePropagation) event.stopImmediatePropagation();
-      showFileIdChangedWarning(status, result);
+
+      if (isUploading) {
+        showMessage(status, result, "파일을 업로드하는 중입니다. 업로드가 완료된 뒤 구매하기 또는 장바구니를 진행해 주세요.", true);
+        return;
+      }
+
+      if (!refreshUploadAvailability()) {
+        showMessage(status, result, "상품 옵션을 먼저 선택해 주세요. 옵션 선택 후 파일 업로드를 완료해야 구매하기 또는 장바구니를 진행할 수 있습니다.", true);
+        return;
+      }
+
+      if (currentUpload && currentUpload.fileId) {
+        showFileIdChangedWarning(status, result);
+        return;
+      }
+
+      showMessage(status, result, "파일 업로드를 먼저 완료해 주세요. 업로드 완료 후 생성된 업로드 파일 ID가 입력되어야 구매하기 또는 장바구니를 진행할 수 있습니다.", true);
     }, true);
 
     form.addEventListener("submit", function (event) {
       event.preventDefault();
 
+      if (isUploading) {
+        showMessage(status, result, "파일을 업로드하는 중입니다. 잠시만 기다려 주세요.", true);
+        return;
+      }
+
       if (getSelectedFileCount(fileInput) > 1) {
         fileInput.value = "";
+        pendingDroppedFile = null;
         showMessage(status, result, getMultipleFilesMessage(), true);
         return;
       }
 
-      var file = fileInput.files && fileInput.files[0];
+      var file = pendingDroppedFile || (fileInput.files && fileInput.files[0]);
       if (!file) {
         showMessage(status, result, "업로드할 파일을 선택해 주세요.", true);
         return;
@@ -869,7 +1101,7 @@
         return;
       }
 
-      var fileIdInputMatch = lastFileIdInputMatch || findFileIdInput();
+      var fileIdInputMatch = lastFileIdInputMatch || refreshUploadAvailability();
       if (!fileIdInputMatch || !fileIdInputMatch.element) {
         status.className = "ppu-status ppu-warning";
         status.textContent = "먼저 상품 옵션을 선택해 주세요. 옵션 선택 후 파일 업로드를 진행할 수 있습니다.";
@@ -932,8 +1164,10 @@
             : "파일 업로드가 완료되었습니다. 상품 옵션을 선택한 뒤 업로드 파일 ID 다시 입력하기를 눌러주세요.";
           renderUploadResult(result, uploaded, fileId, cafe24InputResult);
           form.reset();
+          pendingDroppedFile = null;
         })
         .catch(function () {
+          pendingDroppedFile = null;
           showMessage(
             status,
             result,
@@ -942,7 +1176,8 @@
           );
         })
         .finally(function () {
-          button.disabled = false;
+          isUploading = false;
+          refreshUploadAvailability();
         });
     });
 
