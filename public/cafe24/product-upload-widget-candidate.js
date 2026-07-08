@@ -311,6 +311,30 @@
     return null;
   }
 
+  function getUploadFileIdAddOptionRowFromHidden(hiddenField) {
+    if (!hiddenField) return null;
+    if (!isExactUploadFileIdLabel(hiddenField.value || hiddenField.getAttribute("value") || "")) return null;
+    return hiddenField.closest && hiddenField.closest("tr");
+  }
+
+  function hideUploadFileIdAddOptionRows(root) {
+    var scope = root && root.querySelectorAll ? root : document;
+    var markers;
+
+    try {
+      markers = scope.querySelectorAll("input[type='hidden'][name^='add_option_']");
+    } catch (error) {
+      return;
+    }
+
+    for (var i = 0; i < markers.length; i += 1) {
+      var row = getUploadFileIdAddOptionRowFromHidden(markers[i]);
+      if (!row || row.closest && row.closest("#" + WIDGET_ID)) continue;
+      row.style.display = "none";
+      row.setAttribute("data-perpackage-upload-file-id-row", "hidden");
+    }
+  }
+
   function resolveConfiguredFileIdInput() {
     if (!CONFIG.fileIdInputSelector) return null;
 
@@ -1336,6 +1360,7 @@
     var lastSelectedProductReady = hasVisibleSelectedProductRow();
     var retainedCompletedUpload = null;
     var cartSuccessTimers = [];
+    var cartReloadTimer = null;
 
     fileInput.removeAttribute("multiple");
 
@@ -1351,6 +1376,16 @@
         clearTimeout(cartSuccessTimers[i]);
       }
       cartSuccessTimers = [];
+    }
+
+    function scheduleReloadAfterCartSuccess() {
+      if (cartReloadTimer) {
+        clearTimeout(cartReloadTimer);
+      }
+
+      cartReloadTimer = setTimeout(function () {
+        window.location.reload();
+      }, 700);
     }
 
     function resetAfterCartSuccess() {
@@ -1393,6 +1428,8 @@
       setTimeout(function () {
         refreshUploadAvailability();
       }, 150);
+
+      scheduleReloadAfterCartSuccess();
     }
 
     function scheduleCartSuccessReset() {
@@ -1563,6 +1600,7 @@
       }
 
       if (hasSelectedRow) {
+        hideUploadFileIdAddOptionRows(document.querySelector("#totalProducts"));
         match = findLatestSelectedProductFileIdInput() || (isMatchInLatestSelectedProductRow(match) ? match : null);
       } else {
         match = null;
@@ -1760,6 +1798,10 @@
       }
 
       currentUpload = null;
+      if (pendingApplyTimer) {
+        clearTimeout(pendingApplyTimer);
+        pendingApplyTimer = null;
+      }
       result.hidden = true;
       result.textContent = "";
     }
