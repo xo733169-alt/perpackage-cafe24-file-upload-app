@@ -988,6 +988,85 @@
     );
   }
 
+  function isCartActionElement(element) {
+    if (!element) return false;
+
+    var text = [
+      element.textContent,
+      element.value,
+      element.getAttribute && element.getAttribute("href"),
+      element.getAttribute && element.getAttribute("onclick"),
+      element.getAttribute && element.getAttribute("class"),
+      element.getAttribute && element.getAttribute("id"),
+      element.getAttribute && element.getAttribute("name")
+    ].join(" ");
+    var normalized = normalizeSearchText(text);
+
+    return (
+      normalized.indexOf("product_submit(2") !== -1 ||
+      normalized.indexOf("basket") !== -1 ||
+      normalized.indexOf("cart") !== -1 ||
+      normalized.indexOf("\uc7a5\ubc14\uad6c\ub2c8") !== -1
+    );
+  }
+
+  function elementTextContains(element, keywords) {
+    var text = normalizeSearchText(element && element.textContent);
+    if (!text) return false;
+
+    for (var i = 0; i < keywords.length; i += 1) {
+      if (text.indexOf(normalizeSearchText(keywords[i])) !== -1) return true;
+    }
+
+    return false;
+  }
+
+  function findCartSuccessLayer() {
+    var selectors = [
+      "#confirmLayer",
+      "#confirm_layer",
+      ".ec-base-layer",
+      ".xans-product-basketadd",
+      ".xans-product-addbasket",
+      ".xans-order-layerbasketpackage",
+      ".layerCart",
+      ".basketLayer",
+      "[id*='basket']",
+      "[class*='basket']",
+      "[id*='Basket']",
+      "[class*='Basket']"
+    ].join(", ");
+    var layers;
+
+    try {
+      layers = document.querySelectorAll(selectors);
+    } catch (error) {
+      return null;
+    }
+
+    for (var i = 0; i < layers.length; i += 1) {
+      var layer = layers[i];
+      if (!isElementVisible(layer)) continue;
+
+      var hasCartText = elementTextContains(layer, [
+        "\uc7a5\ubc14\uad6c\ub2c8",
+        "basket",
+        "cart"
+      ]);
+      var hasSuccessAction = elementTextContains(layer, [
+        "\uc1fc\ud551\uacc4\uc18d\ud558\uae30",
+        "\uc7a5\ubc14\uad6c\ub2c8 \uc774\ub3d9",
+        "\uad6c\ub9e4\ud558\uae30",
+        "continue",
+        "checkout"
+      ]);
+
+      if (hasCartText && hasSuccessAction) return layer;
+    }
+
+    return null;
+  }
+
   function renderUploadResult(result, uploaded, fileId, cafe24InputResult) {
     var actions = [
       '<div class="ppu-actions">'
@@ -1256,8 +1335,78 @@
     var pendingApplyTimer = null;
     var lastSelectedProductReady = hasVisibleSelectedProductRow();
     var retainedCompletedUpload = null;
+    var cartSuccessTimers = [];
 
     fileInput.removeAttribute("multiple");
+
+    function clearAvailabilityTimers() {
+      for (var i = 0; i < availabilityTimers.length; i += 1) {
+        clearTimeout(availabilityTimers[i]);
+      }
+      availabilityTimers = [];
+    }
+
+    function clearCartSuccessTimers() {
+      for (var i = 0; i < cartSuccessTimers.length; i += 1) {
+        clearTimeout(cartSuccessTimers[i]);
+      }
+      cartSuccessTimers = [];
+    }
+
+    function resetAfterCartSuccess() {
+      var rows = getConfirmedSelectedProductRows();
+
+      clearCartSuccessTimers();
+      clearAvailabilityTimers();
+
+      for (var i = 0; i < rows.length; i += 1) {
+        clearSelectedProductRowFileId(rows[i]);
+        removeSelectedProductRow(rows[i]);
+      }
+
+      if (pendingApplyTimer) {
+        clearTimeout(pendingApplyTimer);
+        pendingApplyTimer = null;
+      }
+
+      retainedCompletedUpload = null;
+      currentUpload = null;
+      lastFileIdInputMatch = null;
+      pendingDroppedFile = null;
+      lastSelectedProductReady = false;
+      isUploading = false;
+
+      form.reset();
+      fileInput.value = "";
+      fileInput.disabled = true;
+      button.disabled = true;
+      status.className = "ppu-status";
+      status.textContent = "";
+      result.hidden = true;
+      result.textContent = "";
+
+      wrapper.hidden = true;
+      wrapper.style.display = "none";
+      wrapper.setAttribute("aria-hidden", "true");
+      wrapper.classList.remove("ppu-is-ready");
+
+      setTimeout(function () {
+        refreshUploadAvailability();
+      }, 150);
+    }
+
+    function scheduleCartSuccessReset() {
+      var delays = [450, 900, 1400, 2200, 3200];
+
+      clearCartSuccessTimers();
+
+      for (var i = 0; i < delays.length; i += 1) {
+        cartSuccessTimers.push(setTimeout(function () {
+          if (!findCartSuccessLayer()) return;
+          resetAfterCartSuccess();
+        }, delays[i]));
+      }
+    }
 
     function setUploadAvailability(match) {
       var isReady = isUploadReady(match);
@@ -1366,10 +1515,7 @@
     function scheduleUploadAvailabilityRefresh() {
       var delays = [120, 300];
 
-      for (var i = 0; i < availabilityTimers.length; i += 1) {
-        clearTimeout(availabilityTimers[i]);
-      }
-      availabilityTimers = [];
+      clearAvailabilityTimers();
 
       for (var j = 0; j < delays.length; j += 1) {
         availabilityTimers.push(setTimeout(function () {
@@ -1739,6 +1885,7 @@
     document.addEventListener("click", function (event) {
       var actionElement = findOrderActionElement(event.target);
       if (!actionElement) return;
+      var isCartAction = isCartActionElement(actionElement);
 
       if (isUploading) {
         event.preventDefault();
@@ -1752,9 +1899,18 @@
       refreshUploadAvailability();
 
       // File upload is optional; allow order actions unless an uploaded file_id was changed to another non-empty value.
-      if (!currentUpload || !currentUpload.fileId) return;
-      if (!getCurrentFileIdValue(currentUpload)) return;
-      if (isFileIdInputValid(currentUpload)) return;
+      if (!currentUpload || !currentUpload.fileId) {
+        if (isCartAction) scheduleCartSuccessReset();
+        return;
+      }
+      if (!getCurrentFileIdValue(currentUpload)) {
+        if (isCartAction) scheduleCartSuccessReset();
+        return;
+      }
+      if (isFileIdInputValid(currentUpload)) {
+        if (isCartAction) scheduleCartSuccessReset();
+        return;
+      }
 
       if (currentUpload && currentUpload.fileId) {
         event.preventDefault();
