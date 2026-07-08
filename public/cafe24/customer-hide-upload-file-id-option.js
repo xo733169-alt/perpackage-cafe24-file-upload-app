@@ -17,10 +17,17 @@
 
   function removeUploadFileIdSegments(text) {
     return String(text || "")
-      .replace(/\[\s*업로드\s*파일\s*ID\s*[:：][^\]]*\]\s*/g, "")
-      .replace(/\(\s*업로드\s*파일\s*ID\s*[:：][^\)]*\)\s*/g, "")
-      .replace(/업로드\s*파일\s*ID\s*[:：]\s*[0-9a-fA-F-]{8,80}\s*/g, "")
-      .replace(/업로드\s*파일\s*ID\s*[:：]\s*[^\s\]\)]{8,120}\s*/g, "");
+      .replace(/\s*,\s*\[\s*업로드\s*파일\s*ID\s*[:：][^\]]*\]\s*/g, " ")
+      .replace(/\[\s*업로드\s*파일\s*ID\s*[:：][^\]]*\]\s*/g, " ")
+      .replace(/\s*,\s*\(\s*업로드\s*파일\s*ID\s*[:：][^\)]*\)\s*/g, " ")
+      .replace(/\(\s*업로드\s*파일\s*ID\s*[:：][^\)]*\)\s*/g, " ")
+      .replace(/\s*\/\s*업로드\s*파일\s*ID\s*[:：]\s*[0-9a-fA-F-]{8,80}\s*/g, " ")
+      .replace(/\s*\/\s*업로드\s*파일\s*ID\s*[:：]\s*[^\s\]\)]{8,120}\s*/g, " ")
+      .replace(/업로드\s*파일\s*ID\s*[:：]\s*[0-9a-fA-F-]{8,80}\s*/g, " ")
+      .replace(/업로드\s*파일\s*ID\s*[:：]\s*[^\s\]\)]{8,120}\s*/g, " ")
+      .replace(/\s+,/g, ",")
+      .replace(/,\s*$/g, "")
+      .replace(/\s{2,}/g, " ");
   }
 
   function isIgnoredElement(element) {
@@ -54,7 +61,7 @@
   }
 
   function cleanUploadFileIdTextNodes(root) {
-    if (!root || root.getAttribute(CLEANED_MARK) === "1") {
+    if (!root) {
       return;
     }
 
@@ -79,7 +86,9 @@
       node.nodeValue = removeUploadFileIdSegments(node.nodeValue);
     });
 
-    root.setAttribute(CLEANED_MARK, "1");
+    if (nodes.length > 0) {
+      root.setAttribute(CLEANED_MARK, "1");
+    }
   }
 
   function shouldHideWholeElement(element, text) {
@@ -93,7 +102,7 @@
       return false;
     }
 
-    return normalized.length <= 180;
+    return !normalizeText(removeUploadFileIdSegments(normalized));
   }
 
   function handleOptionElement(element) {
