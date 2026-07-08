@@ -412,6 +412,80 @@
     return false;
   }
 
+  function getConfirmedSelectedProductRows() {
+    var rows;
+    var confirmedRows = [];
+
+    try {
+      rows = document.querySelectorAll("#totalProducts tbody.option_products > tr.option_product");
+    } catch (error) {
+      return confirmedRows;
+    }
+
+    for (var i = 0; i < rows.length; i += 1) {
+      var row = rows[i];
+      if (row.closest && row.closest("#" + WIDGET_ID)) continue;
+      if (!isElementVisible(row)) continue;
+      if (!hasNonEmptyOptionBoxId(row)) continue;
+      confirmedRows.push(row);
+    }
+
+    return confirmedRows;
+  }
+
+  function preventQuantityButtonClick(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+  }
+
+  function hideQuantityControls(row) {
+    var controls = row.querySelectorAll([
+      ".eProductQuantityUpClass",
+      ".eProductQuantityDownClass",
+      ".up",
+      ".down",
+      "[id$='_up']",
+      "[id$='_down']"
+    ].join(", "));
+
+    for (var i = 0; i < controls.length; i += 1) {
+      var control = controls[i];
+      control.style.display = "none";
+      control.setAttribute("aria-hidden", "true");
+      control.setAttribute("tabindex", "-1");
+
+      if (!control.__perpackageQuantityLockBound) {
+        control.addEventListener("click", preventQuantityButtonClick, true);
+        control.__perpackageQuantityLockBound = true;
+      }
+    }
+  }
+
+  function enforceSingleQuantityForSelectedProducts() {
+    var rows = getConfirmedSelectedProductRows();
+
+    for (var i = 0; i < rows.length; i += 1) {
+      var row = rows[i];
+      var quantityInput = row.querySelector("input.quantity_opt, input[name='quantity_opt[]']");
+      if (!quantityInput) continue;
+
+      quantityInput.readOnly = true;
+      quantityInput.setAttribute("readonly", "readonly");
+      quantityInput.setAttribute("aria-label", "주문 수량 1개 고정");
+
+      if (String(quantityInput.value || "").trim() !== "1") {
+        quantityInput.value = "1";
+        quantityInput.defaultValue = "1";
+        dispatchFieldEvent(quantityInput, "input");
+        dispatchFieldEvent(quantityInput, "change");
+        dispatchFieldEvent(quantityInput, "blur");
+      }
+
+      hideQuantityControls(row);
+    }
+  }
+
   function getTotalPriceState() {
     var selectors = joinSelectors([
       CONFIG.totalPriceSelector,
@@ -982,33 +1056,15 @@
     wrapper.setAttribute("aria-hidden", "true");
     wrapper.innerHTML = [
       '<h3 class="ppu-title">인쇄용 파일 업로드</h3>',
-      '<p class="ppu-desc">인쇄용 파일을 업로드해 주세요.</p>',
-      '<p class="ppu-desc">AI, PDF, EPS, ZIP 파일 업로드를 권장합니다.</p>',
-      '<p class="ppu-desc">폰트는 아웃라인 처리 후 업로드해 주세요.</p>',
-      '<div class="ppu-guide" aria-label="업로드 전 확인 사항">',
-      '<p class="ppu-guide-title">업로드 전 확인해 주세요</p>',
-      '<ul class="ppu-checklist">',
-      '<li>폰트 아웃라인 처리</li>',
-      '<li>이미지 링크 포함 또는 포함 저장</li>',
-      '<li>칼선/도무송 선 포함</li>',
-      '<li>최종 인쇄 파일 확인</li>',
-      '<li>여러 파일은 ZIP으로 압축</li>',
-      "</ul>",
-      "</div>",
-      '<div class="ppu-static-note">',
-      '<strong>업로드 안내</strong><br>',
-      '인쇄용 파일은 1개만 업로드할 수 있습니다.<br>',
-      '여러 파일을 전달해야 하는 경우 AI, PDF, 이미지, 칼선 파일 등을 하나의 ZIP 파일로 압축해 업로드해 주세요.<br>',
-      '업로드 완료 후 생성되는 업로드 파일 ID는 파일 확인을 위한 값입니다. 주문 과정에서 해당 값을 수정하지 말아 주세요.',
-      "</div>",
-      '<p class="ppu-option-gate" data-ppu-option-gate>파일 업로드는 선택사항입니다. 파일 없이도 구매할 수 있으며, 업로드가 완료되면 주문 옵션 입력칸이 준비되는 즉시 업로드 파일 ID가 자동 입력됩니다.</p>',
+      '<p class="ppu-desc">파일이 준비되어 있으면 업로드해 주세요.</p>',
+      '<p class="ppu-desc">파일 없이도 주문할 수 있습니다.</p>',
+      '<p class="ppu-desc">여러 파일은 ZIP 1개로 압축해 업로드해 주세요.</p>',
+      '<p class="ppu-option-gate" data-ppu-option-gate>파일 업로드는 선택사항입니다.</p>',
       '<form class="ppu-form">',
-      '<p class="ppu-file-help">파일을 선택하면 자동으로 업로드됩니다. PC에서는 아래 영역으로 파일을 끌어다 놓을 수 있습니다.</p>',
-      '<p class="ppu-file-help">파일명에는 업체명 또는 상품명을 포함해 주시면 확인이 더 쉽습니다.</p>',
       '<div class="ppu-upload-controls" data-ppu-upload-controls>',
       '<label class="ppu-dropzone" data-ppu-dropzone>',
       '<span class="ppu-drop-title">파일을 선택하거나 이곳에 끌어다 놓으세요</span>',
-      '<span class="ppu-drop-desc">모바일에서는 이 영역을 눌러 파일을 선택해 주세요.</span>',
+      '<span class="ppu-drop-desc">AI, PDF, EPS, ZIP 파일 권장</span>',
       '<input class="ppu-file" name="file" type="file" required aria-label="인쇄용 파일 선택">',
       "</label>",
       '<button class="ppu-button" type="submit">파일 업로드</button>',
@@ -1150,10 +1206,14 @@
       fileInput.disabled = !hasSelectedRow || isUploading;
       button.disabled = !hasSelectedRow || isUploading;
 
+      if (hasSelectedRow) {
+        enforceSingleQuantityForSelectedProducts();
+      }
+
       if (optionGate) {
         optionGate.textContent = hasSelectedRow
-          ? "파일 업로드는 선택사항입니다. 파일 없이도 구매할 수 있으며, 업로드가 완료되면 주문 옵션 입력칸에 업로드 파일 ID가 자동 입력됩니다."
-          : "상품 옵션을 선택하면 파일 업로드 영역이 표시됩니다. 파일 업로드는 선택사항이며, 파일 없이도 구매할 수 있습니다.";
+          ? "파일 업로드는 선택사항입니다."
+          : "상품 옵션을 선택하면 파일 업로드 영역이 표시됩니다.";
       }
 
       if (match && match.element) {
