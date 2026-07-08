@@ -378,6 +378,7 @@
 
     var className = normalizeSearchText(element.className || "");
     if (className.indexOf("displaynone") !== -1 || className.indexOf("display-none") !== -1) return true;
+    if (element.getAttribute && element.getAttribute("data-perpackage-removing") === "true") return true;
 
     if (requiresOptionBoxIdValidation(element)) {
       return !hasNonEmptyOptionBoxId(element);
@@ -425,12 +426,82 @@
     for (var i = 0; i < rows.length; i += 1) {
       var row = rows[i];
       if (row.closest && row.closest("#" + WIDGET_ID)) continue;
+      if (row.getAttribute && row.getAttribute("data-perpackage-removing") === "true") continue;
       if (!isElementVisible(row)) continue;
       if (!hasNonEmptyOptionBoxId(row)) continue;
       confirmedRows.push(row);
     }
 
     return confirmedRows;
+  }
+
+  function findFileIdInputInSelectedProductRow(row) {
+    if (!row || !row.querySelectorAll) return null;
+
+    var markers = row.querySelectorAll("input[type='hidden'][name^='add_option_'], input[type='hidden'][value]");
+    for (var i = 0; i < markers.length; i += 1) {
+      var marker = markers[i];
+      if (!includesFileIdLabel(marker.value || marker.getAttribute("value") || "")) continue;
+
+      var container = marker.closest && marker.closest("td, li, dd, div, tr");
+      var field = findFirstUsableField(container || row);
+      if (field) {
+        return {
+          element: field,
+          source: "selected_row:add_option"
+        };
+      }
+    }
+
+    return null;
+  }
+
+  function clearSelectedProductRowFileId(row) {
+    var match = findFileIdInputInSelectedProductRow(row);
+    if (match && match.element) {
+      clearFileIdInput(match);
+    }
+  }
+
+  function getSelectedProductDeleteControl(row) {
+    if (!row || !row.querySelector) return null;
+    return row.querySelector([
+      ".option_box_del",
+      ".delete",
+      "a.delete",
+      "[id^='option_box'][id$='_del']"
+    ].join(", "));
+  }
+
+  function removeSelectedProductRow(row) {
+    if (row && row.setAttribute) {
+      row.setAttribute("data-perpackage-removing", "true");
+    }
+
+    var deleteControl = getSelectedProductDeleteControl(row);
+    if (deleteControl && typeof deleteControl.click === "function") {
+      deleteControl.click();
+      return "click";
+    }
+
+    if (row && row.parentNode) {
+      row.parentNode.removeChild(row);
+      return "remove";
+    }
+
+    return "none";
+  }
+
+  function keepOnlyLatestSelectedProductRow() {
+    var rows = getConfirmedSelectedProductRows();
+    if (rows.length <= 1) return false;
+
+    for (var i = 0; i < rows.length - 1; i += 1) {
+      clearSelectedProductRowFileId(rows[i]);
+      removeSelectedProductRow(rows[i]);
+    }
+
+    return true;
   }
 
   function preventQuantityButtonClick(event) {
@@ -1139,6 +1210,27 @@
       result.textContent = "";
     }
 
+    function clearUploadStateBecauseSelectedProductChanged(match) {
+      var fieldToClear = currentUpload && currentUpload.fileIdInputMatch
+        ? currentUpload.fileIdInputMatch
+        : (lastFileIdInputMatch || match);
+
+      if (fieldToClear && fieldToClear.element && document.documentElement.contains(fieldToClear.element)) {
+        clearFileIdInput(fieldToClear);
+      }
+
+      currentUpload = null;
+      lastFileIdInputMatch = null;
+      pendingDroppedFile = null;
+      if (pendingApplyTimer) {
+        clearTimeout(pendingApplyTimer);
+        pendingApplyTimer = null;
+      }
+      fileInput.value = "";
+      result.hidden = true;
+      result.textContent = "";
+    }
+
     function refreshUploadAvailability() {
       var knownMatch = currentUpload && currentUpload.fileIdInputMatch
         ? currentUpload.fileIdInputMatch
@@ -1198,6 +1290,17 @@
 
     setUploadAvailability = function (match) {
       var hasSelectedRow = hasVisibleSelectedProductRow();
+      var removedExtraRows = false;
+
+      if (hasSelectedRow) {
+        removedExtraRows = keepOnlyLatestSelectedProductRow();
+        if (removedExtraRows) {
+          clearUploadStateBecauseSelectedProductChanged(match);
+          match = findFileIdInput();
+          hasSelectedRow = hasVisibleSelectedProductRow();
+          scheduleUploadAvailabilityRefresh();
+        }
+      }
 
       wrapper.hidden = !hasSelectedRow;
       wrapper.style.display = hasSelectedRow ? "" : "none";
