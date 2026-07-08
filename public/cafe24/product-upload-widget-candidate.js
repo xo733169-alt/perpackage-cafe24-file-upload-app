@@ -292,10 +292,7 @@
   function findTextFieldForAddOptionHidden(hiddenField) {
     if (!hiddenField) return null;
 
-    var container = hiddenField.closest && hiddenField.closest("td, li, dd, div");
-    if (!container) {
-      container = hiddenField.parentElement;
-    }
+    var container = hiddenField.closest && hiddenField.closest("tr");
     if (!container || !container.querySelectorAll) return null;
 
     var fields = container.querySelectorAll([
@@ -501,6 +498,22 @@
     return !!(latestRow && latestRow.contains(match.element));
   }
 
+  function isStrictUploadFileIdInputMatch(match) {
+    if (!isMatchInLatestSelectedProductRow(match)) return false;
+
+    var row = match.element.closest && match.element.closest("tr");
+    if (!row || !row.querySelectorAll) return false;
+
+    var markers = row.querySelectorAll("input[type='hidden'][name^='add_option_']");
+    for (var i = 0; i < markers.length; i += 1) {
+      if (isExactUploadFileIdLabel(markers[i].value || markers[i].getAttribute("value") || "")) {
+        return findTextFieldForAddOptionHidden(markers[i]) === match.element;
+      }
+    }
+
+    return false;
+  }
+
   function clearMisappliedFileIdFromSelectedProductRows(fileId, allowedElement) {
     if (!fileId) return;
 
@@ -525,7 +538,7 @@
 
   function applyFileIdToLatestSelectedProductInput(fileId, preferredMatch) {
     var safeMatch = findLatestSelectedProductFileIdInput() ||
-      (isMatchInLatestSelectedProductRow(preferredMatch) ? preferredMatch : null);
+      (isStrictUploadFileIdInputMatch(preferredMatch) ? preferredMatch : null);
 
     if (!safeMatch || !safeMatch.element) {
       return {
@@ -838,11 +851,13 @@
       };
     }
 
-    var match = preferredMatch || findFileIdInput();
+    var match = isStrictUploadFileIdInputMatch(preferredMatch)
+      ? preferredMatch
+      : findLatestSelectedProductFileIdInput();
     if (!match || !match.element) {
       return {
         status: "not_found",
-        source: "no_matching_input"
+        source: "no_strict_upload_file_id_input"
       };
     }
 
@@ -1151,6 +1166,9 @@
           status.textContent = cafe24InputResult.status === "success"
             ? "업로드가 완료되었고 주문 연결용 파일 ID가 입력되었습니다."
             : "업로드가 완료되었습니다. 주문 연결용 입력 옵션은 찾지 못했습니다.";
+          status.textContent = cafe24InputResult.status === "success"
+            ? "파일 업로드가 완료되었습니다."
+            : "파일 업로드가 완료되었습니다. 옵션 입력칸이 준비되면 업로드 파일 ID가 자동 입력됩니다.";
           renderUploadResult(result, uploaded, fileId, cafe24InputResult);
           form.reset();
         })
@@ -1505,7 +1523,7 @@
 
       if (!result.hidden) {
         status.className = "ppu-status ppu-success";
-        status.textContent = "?낅줈???뚯씪 ID媛 二쇰Ц ?듭뀡 ?낅젰移몄뿉 諛섏쁺?섏뿀?듬땲??";
+        status.textContent = "업로드 파일 ID가 주문 옵션 입력칸에 반영되었습니다.";
         renderUploadResult(result, currentUpload.uploaded, currentUpload.fileId, syncResult);
       }
 
@@ -1913,6 +1931,64 @@
         }
       }, 1500);
     }
+  }
+
+  function renderUploadResult(result, uploaded, fileId, cafe24InputResult) {
+    var actions = [
+      '<div class="ppu-actions">'
+    ];
+
+    if (cafe24InputResult.status !== "success") {
+      actions.push('<button class="ppu-action" type="button" data-ppu-action="retry-file-id">업로드 파일 ID 다시 입력하기</button>');
+    }
+
+    actions.push('<button class="ppu-action" type="button" data-ppu-action="reset-upload">다시 업로드하기</button>');
+    actions.push("</div>");
+
+    result.hidden = false;
+    result.innerHTML = [
+      '<span class="ppu-result-title">파일 업로드가 완료되었습니다.</span>',
+      "주문 시 업로드 파일 ID가 함께 전달됩니다.",
+      '<span class="ppu-tracking">업로드 파일 ID: ' + escapeHtml(fileId || "-") + "</span>",
+      '<span class="ppu-tracking">파일명: ' + escapeHtml(uploaded.original_filename || "-") + "</span>",
+      actions.join("")
+    ].join("");
+  }
+
+  function renderWidget() {
+    injectStyles();
+
+    if (document.getElementById(WIDGET_ID)) return;
+
+    var wrapper = document.createElement("section");
+    wrapper.id = WIDGET_ID;
+    wrapper.setAttribute("aria-label", "Perpackage print file upload");
+    wrapper.hidden = true;
+    wrapper.style.display = "none";
+    wrapper.setAttribute("aria-hidden", "true");
+    wrapper.innerHTML = [
+      '<h3 class="ppu-title">인쇄용 파일 업로드</h3>',
+      '<p class="ppu-desc">파일이 준비되어 있으면 업로드해 주세요.</p>',
+      '<p class="ppu-desc">파일 없이도 주문할 수 있습니다.</p>',
+      '<p class="ppu-desc">여러 파일은 ZIP 1개로 압축해 업로드해 주세요.</p>',
+      '<p class="ppu-option-gate" data-ppu-option-gate>파일 업로드는 선택사항입니다.</p>',
+      '<form class="ppu-form">',
+      '<div class="ppu-upload-controls" data-ppu-upload-controls>',
+      '<label class="ppu-dropzone" data-ppu-dropzone>',
+      '<span class="ppu-drop-title">파일을 선택하거나 이곳에 끌어다 놓으세요</span>',
+      '<span class="ppu-drop-desc">AI, PDF, EPS, ZIP 파일 권장</span>',
+      '<input class="ppu-file" name="file" type="file" required aria-label="인쇄용 파일 선택">',
+      "</label>",
+      '<button class="ppu-button" type="submit">파일 업로드</button>',
+      "</div>",
+      '<p class="ppu-status" role="status"></p>',
+      '<div class="ppu-result" hidden></div>',
+      "</form>"
+    ].join("");
+
+    var target = findInsertTarget();
+    target.appendChild(wrapper);
+    bindForm(wrapper);
   }
 
   function showMessage(status, result, message, isError) {
