@@ -1166,6 +1166,7 @@
     var availabilityTimers = [];
     var pendingApplyTimer = null;
     var lastSelectedProductReady = hasVisibleSelectedProductRow();
+    var retainedCompletedUpload = null;
 
     fileInput.removeAttribute("multiple");
 
@@ -1229,6 +1230,30 @@
       fileInput.value = "";
       result.hidden = true;
       result.textContent = "";
+    }
+
+    function retainCompletedUpload(uploadState) {
+      if (!uploadState || !uploadState.fileId) return;
+
+      retainedCompletedUpload = {
+        uploaded: uploadState.uploaded || {},
+        fileId: uploadState.fileId,
+        cafe24InputResult: uploadState.cafe24InputResult || { status: "not_found", source: "retained_upload" },
+        fileIdInputMatch: uploadState.fileIdInputMatch || null
+      };
+    }
+
+    function restoreCurrentUploadFromRetained(match, syncResult) {
+      if (!retainedCompletedUpload || !retainedCompletedUpload.fileId) return null;
+
+      currentUpload = {
+        uploaded: retainedCompletedUpload.uploaded || {},
+        fileId: retainedCompletedUpload.fileId,
+        cafe24InputResult: syncResult || retainedCompletedUpload.cafe24InputResult,
+        fileIdInputMatch: match || retainedCompletedUpload.fileIdInputMatch || null
+      };
+
+      return currentUpload;
     }
 
     function refreshUploadAvailability() {
@@ -1357,6 +1382,53 @@
       return currentUpload.fileIdInputMatch;
     }
 
+    function syncRetainedUploadToCafe24Input(match) {
+      if (!retainedCompletedUpload || !retainedCompletedUpload.fileId) return null;
+      if (!hasVisibleSelectedProductRow()) return null;
+
+      var selectedRows = getConfirmedSelectedProductRows();
+      var latestRow = selectedRows.length ? selectedRows[selectedRows.length - 1] : null;
+      var rowMatch = findFileIdInputInSelectedProductRow(latestRow);
+      var preferredMatch = rowMatch || (
+        match && match.element && latestRow && latestRow.contains(match.element)
+          ? match
+          : null
+      );
+      if (!preferredMatch || !preferredMatch.element) return null;
+
+      var syncResult;
+      if (String(preferredMatch.element.value || "").trim() === retainedCompletedUpload.fileId) {
+        syncResult = {
+          status: "success",
+          source: preferredMatch.source,
+          element: preferredMatch.element
+        };
+      } else {
+        syncResult = applyFileIdToCafe24Input(retainedCompletedUpload.fileId, preferredMatch);
+      }
+
+      if (syncResult.status !== "success") return null;
+
+      var restoredMatch = {
+        element: syncResult.element || preferredMatch.element,
+        source: syncResult.source || preferredMatch.source
+      };
+      retainedCompletedUpload.cafe24InputResult = syncResult;
+      retainedCompletedUpload.fileIdInputMatch = restoredMatch;
+      restoreCurrentUploadFromRetained(restoredMatch, syncResult);
+      lastFileIdInputMatch = restoredMatch;
+      makeFileIdInputReadonly(restoredMatch, retainedCompletedUpload.fileId);
+      watchFileIdInput(currentUpload, status, result);
+
+      if (!result.hidden) {
+        status.className = "ppu-status ppu-success";
+        status.textContent = "?낅줈???뚯씪 ID媛 二쇰Ц ?듭뀡 ?낅젰移몄뿉 諛섏쁺?섏뿀?듬땲??";
+        renderUploadResult(result, currentUpload.uploaded, currentUpload.fileId, syncResult);
+      }
+
+      return restoredMatch;
+    }
+
     refreshUploadAvailability = function () {
       var match = findFileIdInput();
       var hasSelectedRow = hasVisibleSelectedProductRow();
@@ -1372,7 +1444,11 @@
 
       lastSelectedProductReady = true;
       if (hasSelectedRow) {
-        syncCurrentUploadToCafe24Input(match);
+        if (retainedCompletedUpload && retainedCompletedUpload.fileId) {
+          syncRetainedUploadToCafe24Input(match);
+        } else {
+          syncCurrentUploadToCafe24Input(match);
+        }
       }
       return match || lastFileIdInputMatch || null;
     };
@@ -1468,6 +1544,7 @@
         if (retryResult.status === "success") {
           makeFileIdInputReadonly(currentUpload.fileIdInputMatch, currentUpload.fileId);
           watchFileIdInput(currentUpload, status, result);
+          retainCompletedUpload(currentUpload);
           status.className = "ppu-status ppu-success";
           status.textContent = "업로드 파일 ID가 입력 옵션에 다시 반영되었습니다.";
           renderUploadResult(result, currentUpload.uploaded, currentUpload.fileId, retryResult);
@@ -1485,6 +1562,7 @@
         clearFileIdInput(fieldToClear);
         lastFileIdInputMatch = fieldToClear;
         currentUpload = null;
+        retainedCompletedUpload = null;
         pendingDroppedFile = null;
         form.reset();
         fileInput.value = "";
@@ -1669,6 +1747,7 @@
             setTimeout(schedulePendingFileIdApply, 1500);
             setTimeout(schedulePendingFileIdApply, 3000);
           }
+          retainCompletedUpload(currentUpload);
           status.className = "ppu-status ppu-success";
           status.textContent = cafe24InputResult.status === "success"
             ? "파일 업로드가 완료되었습니다. 주문 시 업로드 파일 ID가 함께 전달됩니다."
@@ -1722,6 +1801,7 @@
           }
         };
         currentUpload = editorUpload;
+        retainCompletedUpload(editorUpload);
         lastFileIdInputMatch = editorUpload.fileIdInputMatch;
         makeFileIdInputReadonly(editorUpload.fileIdInputMatch, editorFileId);
         watchFileIdInput(editorUpload, status, result);
