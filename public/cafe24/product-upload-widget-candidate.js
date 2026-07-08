@@ -289,6 +289,31 @@
     return null;
   }
 
+  function findTextFieldForAddOptionHidden(hiddenField) {
+    if (!hiddenField) return null;
+
+    var container = hiddenField.closest && hiddenField.closest("td, li, dd, div");
+    if (!container) {
+      container = hiddenField.parentElement;
+    }
+    if (!container || !container.querySelectorAll) return null;
+
+    var fields = container.querySelectorAll([
+      "input.input_addoption[type='text']",
+      "input.input_peraddoption[type='text']",
+      "input[type='text']",
+      "textarea"
+    ].join(", "));
+
+    for (var i = 0; i < fields.length; i += 1) {
+      var field = fields[i];
+      if (field === hiddenField) continue;
+      if (isFileIdFieldCandidate(field)) return field;
+    }
+
+    return null;
+  }
+
   function resolveConfiguredFileIdInput() {
     if (!CONFIG.fileIdInputSelector) return null;
 
@@ -391,6 +416,13 @@
     return false;
   }
 
+  function isExactUploadFileIdLabel(value) {
+    var expectedLabel = "\uc5c5\ub85c\ub4dc \ud30c\uc77c id";
+    var text = normalizeSearchText(value);
+    if (!text) return false;
+    return text === expectedLabel || compactSearchText(text) === compactSearchText(expectedLabel);
+  }
+
   function hasVisibleSelectedProductRow() {
     var selector = getSelectedProductSelector();
     if (!selector) return false;
@@ -438,22 +470,71 @@
   function findFileIdInputInSelectedProductRow(row) {
     if (!row || !row.querySelectorAll) return null;
 
-    var markers = row.querySelectorAll("input[type='hidden'][name^='add_option_'], input[type='hidden'][value]");
+    var markers = row.querySelectorAll("input[type='hidden'][name^='add_option_']");
     for (var i = 0; i < markers.length; i += 1) {
       var marker = markers[i];
-      if (!includesFileIdLabel(marker.value || marker.getAttribute("value") || "")) continue;
+      if (!isExactUploadFileIdLabel(marker.value || marker.getAttribute("value") || "")) continue;
 
-      var container = marker.closest && marker.closest("td, li, dd, div, tr");
-      var field = findFirstUsableField(container || row);
+      var field = findTextFieldForAddOptionHidden(marker);
       if (field) {
         return {
           element: field,
-          source: "selected_row:add_option"
+          source: "selected_row:exact_upload_file_id"
         };
       }
     }
 
     return null;
+  }
+
+  function findLatestSelectedProductFileIdInput() {
+    var rows = getConfirmedSelectedProductRows();
+    var latestRow = rows.length ? rows[rows.length - 1] : null;
+    return findFileIdInputInSelectedProductRow(latestRow);
+  }
+
+  function isMatchInLatestSelectedProductRow(match) {
+    if (!match || !match.element) return false;
+
+    var rows = getConfirmedSelectedProductRows();
+    var latestRow = rows.length ? rows[rows.length - 1] : null;
+    return !!(latestRow && latestRow.contains(match.element));
+  }
+
+  function clearMisappliedFileIdFromSelectedProductRows(fileId, allowedElement) {
+    if (!fileId) return;
+
+    var rows = getConfirmedSelectedProductRows();
+    for (var rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+      var markers = rows[rowIndex].querySelectorAll("input[type='hidden'][name^='add_option_']");
+      for (var markerIndex = 0; markerIndex < markers.length; markerIndex += 1) {
+        var marker = markers[markerIndex];
+        if (isExactUploadFileIdLabel(marker.value || marker.getAttribute("value") || "")) continue;
+
+        var field = findTextFieldForAddOptionHidden(marker);
+        if (!field || field === allowedElement) continue;
+        if (String(field.value || "").trim() !== fileId) continue;
+
+        setFieldValue(field, "");
+        dispatchFieldEvent(field, "input");
+        dispatchFieldEvent(field, "change");
+        dispatchFieldEvent(field, "blur");
+      }
+    }
+  }
+
+  function applyFileIdToLatestSelectedProductInput(fileId, preferredMatch) {
+    var safeMatch = findLatestSelectedProductFileIdInput() ||
+      (isMatchInLatestSelectedProductRow(preferredMatch) ? preferredMatch : null);
+
+    if (!safeMatch || !safeMatch.element) {
+      return {
+        status: "not_found",
+        source: "no_latest_selected_row_upload_file_id"
+      };
+    }
+
+    return applyFileIdToCafe24Input(fileId, safeMatch);
   }
 
   function clearSelectedProductRowFileId(row) {
@@ -655,23 +736,13 @@
     for (var i = 0; i < hiddenFields.length; i += 1) {
       var hiddenField = hiddenFields[i];
       if (hiddenField.closest && hiddenField.closest("#" + WIDGET_ID)) continue;
-      if (!includesFileIdLabel(hiddenField.value)) continue;
+      if (!isExactUploadFileIdLabel(hiddenField.value || hiddenField.getAttribute("value") || "")) continue;
 
-      var container = hiddenField.closest && hiddenField.closest("td, li, dd, div");
-      var fieldInContainer = findFirstUsableField(container);
+      var fieldInContainer = findTextFieldForAddOptionHidden(hiddenField);
       if (fieldInContainer) {
         return {
           element: fieldInContainer,
-          source: "cafe24:add_option_hidden_value"
-        };
-      }
-
-      var row = hiddenField.closest && hiddenField.closest("tr");
-      var fieldInRow = findFirstUsableField(row);
-      if (fieldInRow) {
-        return {
-          element: fieldInRow,
-          source: "cafe24:add_option_row"
+          source: "cafe24:exact_upload_file_id"
         };
       }
     }
@@ -1321,10 +1392,16 @@
         removedExtraRows = keepOnlyLatestSelectedProductRow();
         if (removedExtraRows) {
           clearUploadStateBecauseSelectedProductChanged(match);
-          match = findFileIdInput();
+          match = findLatestSelectedProductFileIdInput();
           hasSelectedRow = hasVisibleSelectedProductRow();
           scheduleUploadAvailabilityRefresh();
         }
+      }
+
+      if (hasSelectedRow) {
+        match = findLatestSelectedProductFileIdInput() || (isMatchInLatestSelectedProductRow(match) ? match : null);
+      } else {
+        match = null;
       }
 
       wrapper.hidden = !hasSelectedRow;
@@ -1357,8 +1434,12 @@
         return currentUpload.fileIdInputMatch;
       }
 
-      var preferredMatch = match || currentUpload.fileIdInputMatch || lastFileIdInputMatch;
-      var syncResult = applyFileIdToCafe24Input(currentUpload.fileId, preferredMatch);
+      var preferredMatch = findLatestSelectedProductFileIdInput() ||
+        (isMatchInLatestSelectedProductRow(match) ? match : null) ||
+        (isMatchInLatestSelectedProductRow(currentUpload.fileIdInputMatch) ? currentUpload.fileIdInputMatch : null) ||
+        (isMatchInLatestSelectedProductRow(lastFileIdInputMatch) ? lastFileIdInputMatch : null);
+      if (!preferredMatch) return null;
+      var syncResult = applyFileIdToLatestSelectedProductInput(currentUpload.fileId, preferredMatch);
       currentUpload.cafe24InputResult = syncResult;
 
       if (syncResult.status !== "success") {
@@ -1372,6 +1453,7 @@
       lastFileIdInputMatch = currentUpload.fileIdInputMatch;
       makeFileIdInputReadonly(currentUpload.fileIdInputMatch, currentUpload.fileId);
       watchFileIdInput(currentUpload, status, result);
+      clearMisappliedFileIdFromSelectedProductRows(currentUpload.fileId, currentUpload.fileIdInputMatch.element);
 
       if (!result.hidden) {
         status.className = "ppu-status ppu-success";
@@ -1404,7 +1486,7 @@
           element: preferredMatch.element
         };
       } else {
-        syncResult = applyFileIdToCafe24Input(retainedCompletedUpload.fileId, preferredMatch);
+        syncResult = applyFileIdToLatestSelectedProductInput(retainedCompletedUpload.fileId, preferredMatch);
       }
 
       if (syncResult.status !== "success") return null;
@@ -1419,6 +1501,7 @@
       lastFileIdInputMatch = restoredMatch;
       makeFileIdInputReadonly(restoredMatch, retainedCompletedUpload.fileId);
       watchFileIdInput(currentUpload, status, result);
+      clearMisappliedFileIdFromSelectedProductRows(retainedCompletedUpload.fileId, restoredMatch.element);
 
       if (!result.hidden) {
         status.className = "ppu-status ppu-success";
@@ -1430,10 +1513,10 @@
     }
 
     refreshUploadAvailability = function () {
-      var match = findFileIdInput();
+      var match = findLatestSelectedProductFileIdInput() || findFileIdInput();
       var hasSelectedRow = hasVisibleSelectedProductRow();
+      var safeMatch = setUploadAvailability(match);
 
-      setUploadAvailability(match);
       if (!hasSelectedRow) {
         if (lastSelectedProductReady || currentUpload || pendingDroppedFile) {
           clearUploadStateBecauseOptionNotReady(match);
@@ -1445,12 +1528,12 @@
       lastSelectedProductReady = true;
       if (hasSelectedRow) {
         if (retainedCompletedUpload && retainedCompletedUpload.fileId) {
-          syncRetainedUploadToCafe24Input(match);
+          syncRetainedUploadToCafe24Input(safeMatch);
         } else {
-          syncCurrentUploadToCafe24Input(match);
+          syncCurrentUploadToCafe24Input(safeMatch);
         }
       }
-      return match || lastFileIdInputMatch || null;
+      return safeMatch || (isMatchInLatestSelectedProductRow(lastFileIdInputMatch) ? lastFileIdInputMatch : null);
     };
 
     function schedulePendingFileIdApply() {
@@ -1529,7 +1612,7 @@
           return;
         }
 
-        var retryResult = applyFileIdToCafe24Input(currentUpload.fileId, currentUpload.fileIdInputMatch);
+        var retryResult = applyFileIdToLatestSelectedProductInput(currentUpload.fileId, currentUpload.fileIdInputMatch);
         currentUpload.cafe24InputResult = retryResult;
         currentUpload.fileIdInputMatch = retryResult.status === "success"
           ? {
@@ -1544,6 +1627,7 @@
         if (retryResult.status === "success") {
           makeFileIdInputReadonly(currentUpload.fileIdInputMatch, currentUpload.fileId);
           watchFileIdInput(currentUpload, status, result);
+          clearMisappliedFileIdFromSelectedProductRows(currentUpload.fileId, currentUpload.fileIdInputMatch.element);
           retainCompletedUpload(currentUpload);
           status.className = "ppu-status ppu-success";
           status.textContent = "업로드 파일 ID가 입력 옵션에 다시 반영되었습니다.";
@@ -1725,7 +1809,7 @@
         .then(function (json) {
           var uploaded = json.file || {};
           var fileId = uploaded.id || json.id || "";
-          var cafe24InputResult = applyFileIdToCafe24Input(fileId, fileIdInputMatch);
+          var cafe24InputResult = applyFileIdToLatestSelectedProductInput(fileId, fileIdInputMatch);
           currentUpload = {
             uploaded: uploaded,
             fileId: fileId,
@@ -1741,6 +1825,7 @@
             lastFileIdInputMatch = currentUpload.fileIdInputMatch;
             makeFileIdInputReadonly(currentUpload.fileIdInputMatch, fileId);
             watchFileIdInput(currentUpload, status, result);
+            clearMisappliedFileIdFromSelectedProductRows(fileId, currentUpload.fileIdInputMatch.element);
           } else {
             schedulePendingFileIdApply();
             setTimeout(schedulePendingFileIdApply, 800);
@@ -1788,7 +1873,7 @@
         var match = refreshUploadAvailability();
         if (!match || !match.element) return false;
 
-        var applied = applyFileIdToCafe24Input(editorFileId, match);
+        var applied = applyFileIdToLatestSelectedProductInput(editorFileId, match);
         if (applied.status !== "success") return false;
 
         var editorUpload = {
@@ -1805,6 +1890,7 @@
         lastFileIdInputMatch = editorUpload.fileIdInputMatch;
         makeFileIdInputReadonly(editorUpload.fileIdInputMatch, editorFileId);
         watchFileIdInput(editorUpload, status, result);
+        clearMisappliedFileIdFromSelectedProductRows(editorFileId, editorUpload.fileIdInputMatch.element);
         status.className = "ppu-status ppu-success";
         status.textContent = "전개도 에디터에서 업로드한 파일 ID가 입력 옵션에 자동 입력되었습니다. 이 값은 수정하지 말아 주세요.";
         return true;
