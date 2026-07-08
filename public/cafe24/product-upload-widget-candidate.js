@@ -931,7 +931,7 @@
   }
 
   function getMultipleFilesMessage() {
-    return "파일은 1개만 업로드 가능합니다. 여러 파일을 전달해야 하는 경우 AI, PDF, 이미지, 칼선 파일 등을 하나의 ZIP 파일로 압축해 업로드해 주세요.";
+    return "파일은 1개만 업로드 가능합니다. 여러 파일은 AI, PDF, EPS, JPG, PNG만 포함한 ZIP 1개로 압축해 업로드해 주세요.";
   }
 
   function getFileIdChangedMessage() {
@@ -1167,7 +1167,7 @@
     wrapper.setAttribute("aria-hidden", "true");
     wrapper.innerHTML = [
       '<h3 class="ppu-title">인쇄파일 업로드</h3>',
-      '<p class="ppu-desc">AI, PDF, ZIP, DXF 파일 업로드를 권장합니다. 파일 확인 후 필요한 경우 별도로 안내드립니다.</p>',
+      '<p class="ppu-desc">AI, PDF, EPS, ZIP 파일만 업로드할 수 있습니다. 최대 100MB까지 업로드할 수 있습니다.</p>',
       '<form class="ppu-form">',
       '<input class="ppu-file" name="file" type="file" required aria-label="인쇄파일 선택">',
       '<button class="ppu-button" type="submit">파일 업로드</button>',
@@ -1279,7 +1279,7 @@
             return {};
           }).then(function (json) {
             if (!response.ok || !json.ok) {
-              throw new Error(json.message || "파일 업로드에 실패했습니다.");
+              throw new Error(json.message || "파일 용량이 너무 큽니다. 100MB 이하 파일만 업로드해 주세요.");
             }
             return json;
           });
@@ -1347,15 +1347,16 @@
     wrapper.setAttribute("aria-hidden", "true");
     wrapper.innerHTML = [
       '<h3 class="ppu-title">인쇄용 파일 업로드</h3>',
-      '<p class="ppu-desc">파일이 준비되어 있으면 업로드해 주세요.</p>',
+      '<p class="ppu-desc">AI, PDF, EPS, ZIP 파일만 업로드할 수 있습니다.</p>',
       '<p class="ppu-desc">파일 없이도 주문할 수 있습니다.</p>',
-      '<p class="ppu-desc">여러 파일은 ZIP 1개로 압축해 업로드해 주세요.</p>',
+      '<p class="ppu-desc">최대 100MB까지 업로드할 수 있습니다.</p>',
+      '<p class="ppu-desc">ZIP 안에는 AI, PDF, EPS, JPG, PNG 파일만 포함해 주세요.</p>',
       '<p class="ppu-option-gate" data-ppu-option-gate>파일 업로드는 선택사항입니다.</p>',
       '<form class="ppu-form">',
       '<div class="ppu-upload-controls" data-ppu-upload-controls>',
       '<label class="ppu-dropzone" data-ppu-dropzone>',
       '<span class="ppu-drop-title">파일을 선택하거나 이곳에 끌어다 놓으세요</span>',
-      '<span class="ppu-drop-desc">AI, PDF, EPS, ZIP 파일 권장</span>',
+      '<span class="ppu-drop-desc">AI, PDF, EPS, ZIP 파일 / 최대 100MB</span>',
       '<input class="ppu-file" name="file" type="file" required aria-label="인쇄용 파일 선택">',
       "</label>",
       '<button class="ppu-button" type="submit">파일 업로드</button>',
@@ -2084,7 +2085,7 @@
             return {};
           }).then(function (json) {
             if (!response.ok || !json.ok) {
-              throw new Error(json.message || "파일 업로드에 실패했습니다.");
+              throw new Error(json.message || "파일 용량이 너무 큽니다. 100MB 이하 파일만 업로드해 주세요.");
             }
             return json;
           });
@@ -2129,7 +2130,7 @@
           showMessage(
             status,
             result,
-            "파일 업로드에 실패했습니다. 파일 용량이 너무 크거나 네트워크가 불안정할 수 있습니다. 다시 시도해 주세요.",
+            "파일 용량이 너무 큽니다. 100MB 이하 파일만 업로드해 주세요.",
             true
           );
         })
@@ -2233,15 +2234,16 @@
     wrapper.setAttribute("aria-hidden", "true");
     wrapper.innerHTML = [
       '<h3 class="ppu-title">인쇄용 파일 업로드</h3>',
-      '<p class="ppu-desc">파일이 준비되어 있으면 업로드해 주세요.</p>',
+      '<p class="ppu-desc">AI, PDF, EPS, ZIP 파일만 업로드할 수 있습니다.</p>',
       '<p class="ppu-desc">파일 없이도 주문할 수 있습니다.</p>',
-      '<p class="ppu-desc">여러 파일은 ZIP 1개로 압축해 업로드해 주세요.</p>',
+      '<p class="ppu-desc">최대 100MB까지 업로드할 수 있습니다.</p>',
+      '<p class="ppu-desc">ZIP 안에는 AI, PDF, EPS, JPG, PNG 파일만 포함해 주세요.</p>',
       '<p class="ppu-option-gate" data-ppu-option-gate>파일 업로드는 선택사항입니다.</p>',
       '<form class="ppu-form">',
       '<div class="ppu-upload-controls" data-ppu-upload-controls>',
       '<label class="ppu-dropzone" data-ppu-dropzone>',
       '<span class="ppu-drop-title">파일을 선택하거나 이곳에 끌어다 놓으세요</span>',
-      '<span class="ppu-drop-desc">AI, PDF, EPS, ZIP 파일 권장</span>',
+      '<span class="ppu-drop-desc">AI, PDF, EPS, ZIP 파일 / 최대 100MB</span>',
       '<input class="ppu-file" name="file" type="file" required aria-label="인쇄용 파일 선택">',
       "</label>",
       '<button class="ppu-button" type="submit">파일 업로드</button>',
