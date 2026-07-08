@@ -289,6 +289,24 @@
     return null;
   }
 
+  function isAddOptionValueFieldCandidate(element) {
+    if (!element) return false;
+    var tagName = String(element.tagName || "").toLowerCase();
+    if (tagName !== "input" && tagName !== "textarea") return false;
+    if (element.closest && element.closest("#" + WIDGET_ID)) return false;
+    if (element.disabled) return false;
+
+    if (tagName === "input") {
+      var inputType = String(element.getAttribute("type") || "text").toLowerCase();
+      var blockedTypes = ["button", "checkbox", "file", "hidden", "image", "radio", "reset", "submit"];
+      for (var i = 0; i < blockedTypes.length; i += 1) {
+        if (inputType === blockedTypes[i]) return false;
+      }
+    }
+
+    return true;
+  }
+
   function findTextFieldForAddOptionHidden(hiddenField) {
     if (!hiddenField) return null;
 
@@ -305,7 +323,7 @@
     for (var i = 0; i < fields.length; i += 1) {
       var field = fields[i];
       if (field === hiddenField) continue;
-      if (isFileIdFieldCandidate(field)) return field;
+      if (isAddOptionValueFieldCandidate(field)) return field;
     }
 
     return null;
@@ -330,8 +348,18 @@
     for (var i = 0; i < markers.length; i += 1) {
       var row = getUploadFileIdAddOptionRowFromHidden(markers[i]);
       if (!row || row.closest && row.closest("#" + WIDGET_ID)) continue;
-      row.style.display = "none";
-      row.setAttribute("data-perpackage-upload-file-id-row", "hidden");
+      row.hidden = false;
+      row.style.display = "";
+      row.style.visibility = "";
+      row.style.position = "absolute";
+      row.style.left = "-9999px";
+      row.style.top = "auto";
+      row.style.width = "1px";
+      row.style.height = "1px";
+      row.style.overflow = "hidden";
+      row.style.opacity = "0";
+      row.style.pointerEvents = "none";
+      row.setAttribute("data-perpackage-upload-file-id-row", "visually-hidden");
     }
   }
 
@@ -1749,6 +1777,44 @@
       }, 250);
     }
 
+    function reinforceFileIdBeforeOrderAction(match) {
+      var sourceUpload = currentUpload && currentUpload.fileId
+        ? currentUpload
+        : retainedCompletedUpload;
+
+      if (!sourceUpload || !sourceUpload.fileId) return null;
+      if (!hasVisibleSelectedProductRow()) return null;
+
+      var preferredMatch = findLatestSelectedProductFileIdInput() ||
+        (isMatchInLatestSelectedProductRow(match) ? match : null) ||
+        (isMatchInLatestSelectedProductRow(sourceUpload.fileIdInputMatch) ? sourceUpload.fileIdInputMatch : null) ||
+        (isMatchInLatestSelectedProductRow(lastFileIdInputMatch) ? lastFileIdInputMatch : null);
+
+      if (!preferredMatch || !preferredMatch.element) return null;
+
+      var syncResult = applyFileIdToLatestSelectedProductInput(sourceUpload.fileId, preferredMatch);
+      if (syncResult.status !== "success") return null;
+
+      var reinforcedMatch = {
+        element: syncResult.element || preferredMatch.element,
+        source: syncResult.source || preferredMatch.source
+      };
+
+      currentUpload = {
+        uploaded: sourceUpload.uploaded || {},
+        fileId: sourceUpload.fileId,
+        cafe24InputResult: syncResult,
+        fileIdInputMatch: reinforcedMatch
+      };
+      lastFileIdInputMatch = reinforcedMatch;
+      makeFileIdInputReadonly(reinforcedMatch, sourceUpload.fileId);
+      watchFileIdInput(currentUpload, status, result);
+      clearMisappliedFileIdFromSelectedProductRows(sourceUpload.fileId, reinforcedMatch.element);
+      retainCompletedUpload(currentUpload);
+
+      return reinforcedMatch;
+    }
+
     refreshUploadAvailability();
 
     if (window.MutationObserver) {
@@ -1939,6 +2005,7 @@
       }
 
       refreshUploadAvailability();
+      reinforceFileIdBeforeOrderAction(lastFileIdInputMatch);
 
       // File upload is optional; allow order actions unless an uploaded file_id was changed to another non-empty value.
       if (!currentUpload || !currentUpload.fileId) {
