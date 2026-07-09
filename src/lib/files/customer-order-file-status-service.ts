@@ -179,24 +179,95 @@ function compareRequestByLatest(
   return bTime - aTime;
 }
 
-function isAvailableReuploadRequest(input: {
-  file: CustomerOrderFileRecord;
+function mergeVerifiedOrderFile(
+  orderFiles: CustomerOrderFileRecord[],
+  verifiedFile: CustomerOrderFileRecord
+) {
+  if (orderFiles.some((file) => file.id === verifiedFile.id)) {
+    return orderFiles;
+  }
+
+  return [verifiedFile, ...orderFiles];
+}
+
+function findLatestNeedReuploadFile(orderFiles: CustomerOrderFileRecord[]) {
+  return orderFiles.find((file) => file.status === "need_reupload") ?? null;
+}
+
+function isOpenRequestedReuploadRequest(input: {
+  orderId: string;
+  orderFileIds: Set<string>;
   request: CustomerOrderReuploadRequestRecord | null;
 }) {
   const request = input.request;
-  if (!request || input.file.status !== "need_reupload") {
+  if (!request) {
     return false;
   }
 
   return Boolean(
     request.status === "requested" &&
-      request.order_id?.trim() === input.file.order_id?.trim() &&
-      request.original_file_id === input.file.id &&
+      request.order_id?.trim() === input.orderId &&
+      input.orderFileIds.has(request.original_file_id) &&
       !request.used_at &&
       !request.new_file_id &&
       request.public_id &&
       new Date(request.expires_at).getTime() > Date.now()
   );
+}
+
+function findLatestOpenRequestedReuploadRequest(input: {
+  orderId: string;
+  orderFileIds: Set<string>;
+  requests: CustomerOrderReuploadRequestRecord[];
+}) {
+  return (
+    [...input.requests]
+      .sort(compareRequestByLatest)
+      .find((request) =>
+        isOpenRequestedReuploadRequest({
+          orderId: input.orderId,
+          orderFileIds: input.orderFileIds,
+          request
+        })
+      ) ?? null
+  );
+}
+
+function findLatestOrderReuploadRequest(input: {
+  orderFileIds: Set<string>;
+  requests: CustomerOrderReuploadRequestRecord[];
+}) {
+  return (
+    [...input.requests]
+      .sort(compareRequestByLatest)
+      .find(
+        (request) =>
+          input.orderFileIds.has(request.original_file_id) ||
+          Boolean(request.new_file_id && input.orderFileIds.has(request.new_file_id))
+      ) ?? null
+  );
+}
+
+function findDisplayFile(input: {
+  activeRequest: CustomerOrderReuploadRequestRecord | null;
+  orderFiles: CustomerOrderFileRecord[];
+  verifiedFile: CustomerOrderFileRecord;
+}) {
+  const latestNeedReuploadFile = findLatestNeedReuploadFile(input.orderFiles);
+  if (latestNeedReuploadFile) {
+    return latestNeedReuploadFile;
+  }
+
+  if (input.activeRequest) {
+    const requestedFile = input.orderFiles.find(
+      (file) => file.id === input.activeRequest?.original_file_id
+    );
+    if (requestedFile) {
+      return requestedFile;
+    }
+  }
+
+  return input.orderFiles[0] ?? input.verifiedFile;
 }
 
 async function getCustomerOrderFile(input: { orderId: string; fileId: string }) {
@@ -219,28 +290,44 @@ async function getCustomerOrderFile(input: { orderId: string; fileId: string }) 
   return data ? (data as unknown as CustomerOrderFileRecord) : null;
 }
 
-async function getLatestCustomerOrderReuploadRequest(input: {
-  orderId: string;
-  fileId: string;
-}) {
+async function listCustomerOrderFiles(orderId: string) {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("files")
+    .select(CUSTOMER_ORDER_FILE_SELECT)
+    .eq("order_id", orderId)
+    .order("created_at", { ascending: false })
+    .limit(50);
+
+  if (error) {
+    console.error("customer_order_file_status_order_files_lookup_failed", {
+      code: error.code ?? null,
+      message: sanitizeErrorMessage(error.message)
+    });
+    return [];
+  }
+
+  return (data ?? []) as unknown as CustomerOrderFileRecord[];
+}
+
+async function listCustomerOrderReuploadRequests(orderId: string) {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("file_reupload_requests")
     .select(CUSTOMER_ORDER_REUPLOAD_SELECT)
-    .eq("order_id", input.orderId)
-    .or(`original_file_id.eq.${input.fileId},new_file_id.eq.${input.fileId}`)
+    .eq("order_id", orderId)
     .order("created_at", { ascending: false })
-    .limit(5);
+    .limit(20);
 
   if (error) {
     console.error("customer_order_file_status_reupload_lookup_failed", {
       code: error.code ?? null,
       message: sanitizeErrorMessage(error.message)
     });
-    return null;
+    return [];
   }
 
-  return ((data ?? []) as unknown as CustomerOrderReuploadRequestRecord[]).sort(compareRequestByLatest)[0] ?? null;
+  return (data ?? []) as unknown as CustomerOrderReuploadRequestRecord[];
 }
 
 export async function lookupCustomerOrderFileStatus(input: {
@@ -255,28 +342,42 @@ export async function lookupCustomerOrderFileStatus(input: {
     return null;
   }
 
-  const file = await getCustomerOrderFile({ orderId, fileId });
-  if (!file) {
+  const verifiedFile = await getCustomerOrderFile({ orderId, fileId });
+  if (!verifiedFile) {
     return null;
   }
 
-  const fileStatus = getFileStatusMessage(file.status);
-  const latestReuploadRequest = await getLatestCustomerOrderReuploadRequest({
+  const orderFiles = mergeVerifiedOrderFile(await listCustomerOrderFiles(orderId), verifiedFile);
+  const orderFileIds = new Set(orderFiles.map((file) => file.id));
+  const reuploadRequests = await listCustomerOrderReuploadRequests(orderId);
+  const activeReuploadRequest = findLatestOpenRequestedReuploadRequest({
     orderId,
-    fileId
+    orderFileIds,
+    requests: reuploadRequests
   });
+  const latestReuploadRequest =
+    activeReuploadRequest ??
+    findLatestOrderReuploadRequest({
+      orderFileIds,
+      requests: reuploadRequests
+    });
+  const file = findDisplayFile({
+    activeRequest: activeReuploadRequest,
+    orderFiles,
+    verifiedFile
+  });
+  const fileStatus = activeReuploadRequest
+    ? getFileStatusMessage("need_reupload")
+    : getFileStatusMessage(file.status);
   const reuploadStatus = latestReuploadRequest
     ? getReuploadStatusMessage(latestReuploadRequest.status)
     : null;
   const hasReuploadRequest = Boolean(latestReuploadRequest);
-  const requested = file.status === "need_reupload" || latestReuploadRequest?.status === "requested";
-  const reuploadAvailable = isAvailableReuploadRequest({
-    file,
-    request: latestReuploadRequest
-  });
+  const requested = file.status === "need_reupload" || Boolean(activeReuploadRequest);
+  const reuploadAvailable = Boolean(activeReuploadRequest);
   const reuploadUrl =
-    reuploadAvailable && latestReuploadRequest?.public_id
-      ? `/reupload/request/${encodeURIComponent(latestReuploadRequest.public_id)}`
+    reuploadAvailable && activeReuploadRequest?.public_id
+      ? `/reupload/request/${encodeURIComponent(activeReuploadRequest.public_id)}`
       : null;
   const customerMessage = sanitizeCustomerMessage(latestReuploadRequest?.customer_message);
   const reuploadMessage =
