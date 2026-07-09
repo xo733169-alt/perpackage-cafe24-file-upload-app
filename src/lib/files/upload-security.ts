@@ -2,7 +2,7 @@ const DEFAULT_UPLOAD_MAX_FILE_SIZE_MB = 10;
 const DEFAULT_UPLOAD_ZIP_MAX_FILES = 50;
 const DEFAULT_UPLOAD_ZIP_MAX_TOTAL_UNCOMPRESSED_MB = 50;
 
-const DIRECT_UPLOAD_ALLOWED_EXTENSIONS = new Set([".ai", ".pdf", ".eps", ".zip"]);
+const DIRECT_UPLOAD_ALLOWED_EXTENSIONS = new Set([".ai", ".pdf", ".eps", ".zip", ".jpg", ".jpeg", ".png"]);
 const ZIP_ENTRY_ALLOWED_EXTENSIONS = new Set([".ai", ".pdf", ".eps", ".jpg", ".jpeg", ".png"]);
 const BLOCKED_EXTENSIONS = new Set([
   ".exe",
@@ -28,7 +28,7 @@ const BLOCKED_EXTENSIONS = new Set([
 ]);
 
 const DIRECT_EXTENSION_ERROR =
-  "업로드할 수 없는 파일 형식입니다. AI, PDF, EPS 또는 ZIP 파일만 업로드해 주세요.";
+  "업로드할 수 없는 파일 형식입니다. AI, PDF, EPS, JPG, PNG 또는 ZIP 파일만 업로드해 주세요.";
 const ZIP_ENTRY_ERROR =
   "ZIP 파일 안에 업로드할 수 없는 파일이 포함되어 있습니다. 허용 파일만 남긴 뒤 다시 압축해 업로드해 주세요.";
 const ZIP_PATH_ERROR =
