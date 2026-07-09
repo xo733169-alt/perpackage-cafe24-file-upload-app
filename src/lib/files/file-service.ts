@@ -3,8 +3,8 @@ import { isKnownFileStatus } from "@/lib/files/file-status";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { uploadToNaverObjectStorage } from "@/lib/storage/naver-object-storage";
 import type { FileUploadInput, UploadedFileRecord } from "./types";
+import { getExtension, validateUploadFile, validateUploadFileMetadata } from "./upload-security";
 
-const DEFAULT_UPLOAD_MAX_FILE_SIZE_MB = 10;
 const STORAGE_PROVIDER = "naver-object-storage";
 
 export type RecentFileOrderLinkFilter = "all" | "linked" | "unlinked";
@@ -19,28 +19,6 @@ function sanitizeFilename(filename: string) {
   return normalized || "upload-file";
 }
 
-function getExtension(filename: string) {
-  const index = filename.lastIndexOf(".");
-  if (index === -1) return "";
-  return filename.slice(index).toLowerCase();
-}
-
-function getUploadLimitBytes() {
-  const mb = Number(process.env.UPLOAD_MAX_FILE_SIZE_MB ?? DEFAULT_UPLOAD_MAX_FILE_SIZE_MB);
-  const safeMb = Number.isFinite(mb) && mb > 0 ? mb : DEFAULT_UPLOAD_MAX_FILE_SIZE_MB;
-  return safeMb * 1024 * 1024;
-}
-
-function assertAllowedFile(file: File) {
-  if (file.size <= 0) {
-    throw new Error("File is empty.");
-  }
-
-  if (file.size > getUploadLimitBytes()) {
-    throw new Error("File size exceeds the current upload limit.");
-  }
-}
-
 function buildStoragePath(input: {
   mallId?: string | null;
   productNo?: string | null;
@@ -53,7 +31,7 @@ function buildStoragePath(input: {
 }
 
 export async function uploadFile(input: FileUploadInput): Promise<UploadedFileRecord> {
-  assertAllowedFile(input.file);
+  validateUploadFileMetadata(input.file);
 
   const originalFilename = sanitizeFilename(input.file.name);
   const storedFilename = `${Date.now()}-${nanoid(10)}${getExtension(originalFilename)}`;
@@ -63,6 +41,10 @@ export async function uploadFile(input: FileUploadInput): Promise<UploadedFileRe
     storedFilename
   });
   const buffer = Buffer.from(await input.file.arrayBuffer());
+  await validateUploadFile({
+    file: input.file,
+    buffer
+  });
   const uploaded = await uploadToNaverObjectStorage({
     key: storagePath,
     body: buffer,

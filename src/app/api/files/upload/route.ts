@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { uploadFile } from "@/lib/files/file-service";
+import { UploadValidationError } from "@/lib/files/upload-security";
 
 const allowedUploadOrigins = new Set([
   "https://peerl.cafe24.com",
@@ -105,6 +106,14 @@ export async function POST(request: NextRequest) {
       }
     });
   } catch (error) {
+    if (error instanceof UploadValidationError) {
+      return jsonWithCors(
+        request,
+        { ok: false, message: error.message },
+        { status: 400 }
+      );
+    }
+
     console.error("file_upload_failed", error instanceof Error ? error.message : "unknown_error");
     return jsonWithCors(
       request,

@@ -2125,12 +2125,12 @@
           form.reset();
           pendingDroppedFile = null;
         })
-        .catch(function () {
+        .catch(function (error) {
           pendingDroppedFile = null;
           showMessage(
             status,
             result,
-            "파일 용량이 너무 큽니다. 100MB 이하 파일만 업로드해 주세요.",
+            error && error.message ? error.message : "파일 업로드에 실패했습니다. 다시 시도해 주세요.",
             true
           );
         })
