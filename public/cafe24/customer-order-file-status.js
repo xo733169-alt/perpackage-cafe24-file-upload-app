@@ -6,6 +6,7 @@
   var ORDER_ID_PATTERN = /\b\d{8}-\d{7}(?:-\d{2})?\b/;
   var FILE_ID_PATTERN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/i;
   var UPLOAD_FILE_ID_LABEL = "업로드 파일 ID";
+  var APP_ORIGIN = "https://perpackage-cafe24-file-upload-app.vercel.app";
   var attempts = 0;
   var isLoading = false;
   var didRender = false;
@@ -16,14 +17,22 @@
       try {
         return new URL(script.src).origin;
       } catch (_) {
-        return "https://perpackage-cafe24-file-upload-app.vercel.app";
+        return APP_ORIGIN;
       }
     }
 
-    return "https://perpackage-cafe24-file-upload-app.vercel.app";
+    return APP_ORIGIN;
   }
 
   var apiUrl = getScriptOrigin() + "/api/customer/order-file-status";
+
+  function normalizeReuploadUrl(url) {
+    var value = normalizeText(url);
+    if (!value) return "";
+    if (/^https?:\/\//i.test(value)) return value;
+    if (value.charAt(0) === "/") return APP_ORIGIN + value;
+    return APP_ORIGIN + "/" + value;
+  }
 
   function normalizeText(value) {
     return (value || "").replace(/\s+/g, " ").trim();
@@ -256,7 +265,7 @@
       if (reupload.available && reupload.url) {
         reuploadButtonHtml =
           '<a class="ppu-order-status-button" href="' +
-          escapeHtml(reupload.url) +
+          escapeHtml(normalizeReuploadUrl(reupload.url)) +
           '">' +
           escapeHtml(reupload.button_label || "파일 재업로드하기") +
           "</a>";
