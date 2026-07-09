@@ -2,6 +2,7 @@
   "use strict";
 
   var ROOT_ID = "perpackage-customer-order-file-status";
+  var PLACEHOLDER_ID = "perpackage-customer-order-file-status-root";
   var ORDER_ID_PATTERN = /\b\d{8}-\d{7}(?:-\d{2})?\b/;
   var FILE_ID_PATTERN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/i;
   var UPLOAD_FILE_ID_LABEL = "업로드 파일 ID";
@@ -198,12 +199,44 @@
     return document.body;
   }
 
+  function getStatusRoot() {
+    var placeholder = document.getElementById(PLACEHOLDER_ID);
+    var root = document.getElementById(ROOT_ID);
+
+    if (placeholder) {
+      if (root && root.parentNode !== placeholder) {
+        placeholder.appendChild(root);
+        return root;
+      }
+
+      if (!root) {
+        root = document.createElement("section");
+        root.id = ROOT_ID;
+        root.setAttribute("aria-label", "파일 확인 상태");
+        placeholder.appendChild(root);
+      }
+
+      return root;
+    }
+
+    if (root) {
+      return root;
+    }
+
+    root = document.createElement("section");
+    root.id = ROOT_ID;
+    root.setAttribute("aria-label", "파일 확인 상태");
+    var target = findInsertTarget();
+    target.parentNode.insertBefore(root, target.nextSibling);
+    return root;
+  }
+
   function renderStatusBox(data) {
     if (!data || !data.ok || !data.has_file || !data.file) return;
     didRender = true;
     ensureStyle();
 
-    var root = document.getElementById(ROOT_ID);
+    var root = getStatusRoot();
     if (!root) {
       root = document.createElement("section");
       root.id = ROOT_ID;
