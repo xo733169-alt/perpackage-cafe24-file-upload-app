@@ -11,6 +11,7 @@ type CustomerOrderFileRecord = {
 
 type CustomerOrderReuploadRequestRecord = {
   id: string;
+  public_id: string | null;
   original_file_id: string;
   new_file_id: string | null;
   order_id: string | null;
@@ -33,7 +34,9 @@ export type CustomerOrderFileStatusResult = {
   };
   reupload: {
     requested: boolean;
-    available: false;
+    available: boolean;
+    button_label: string | null;
+    url: string | null;
     status: FileReuploadRequestStatus | null;
     status_label: string | null;
     message: string | null;
@@ -55,6 +58,7 @@ const CUSTOMER_ORDER_FILE_SELECT = [
 
 const CUSTOMER_ORDER_REUPLOAD_SELECT = [
   "id",
+  "public_id",
   "original_file_id",
   "new_file_id",
   "order_id",
@@ -175,6 +179,26 @@ function compareRequestByLatest(
   return bTime - aTime;
 }
 
+function isAvailableReuploadRequest(input: {
+  file: CustomerOrderFileRecord;
+  request: CustomerOrderReuploadRequestRecord | null;
+}) {
+  const request = input.request;
+  if (!request || input.file.status !== "need_reupload") {
+    return false;
+  }
+
+  return Boolean(
+    request.status === "requested" &&
+      request.order_id?.trim() === input.file.order_id?.trim() &&
+      request.original_file_id === input.file.id &&
+      !request.used_at &&
+      !request.new_file_id &&
+      request.public_id &&
+      new Date(request.expires_at).getTime() > Date.now()
+  );
+}
+
 async function getCustomerOrderFile(input: { orderId: string; fileId: string }) {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
@@ -246,6 +270,14 @@ export async function lookupCustomerOrderFileStatus(input: {
     : null;
   const hasReuploadRequest = Boolean(latestReuploadRequest);
   const requested = file.status === "need_reupload" || latestReuploadRequest?.status === "requested";
+  const reuploadAvailable = isAvailableReuploadRequest({
+    file,
+    request: latestReuploadRequest
+  });
+  const reuploadUrl =
+    reuploadAvailable && latestReuploadRequest?.public_id
+      ? `/reupload/request/${encodeURIComponent(latestReuploadRequest.public_id)}`
+      : null;
   const customerMessage = sanitizeCustomerMessage(latestReuploadRequest?.customer_message);
   const reuploadMessage =
     customerMessage ??
@@ -263,7 +295,9 @@ export async function lookupCustomerOrderFileStatus(input: {
     },
     reupload: {
       requested,
-      available: false,
+      available: reuploadAvailable,
+      button_label: reuploadAvailable ? "파일 재업로드하기" : null,
+      url: reuploadUrl,
       status: latestReuploadRequest?.status ?? null,
       status_label: reuploadStatus?.label ?? (requested ? "재업로드 요청" : null),
       message: hasReuploadRequest || requested ? reuploadMessage : null

@@ -171,6 +171,8 @@
       "#" + ROOT_ID + " .ppu-order-status-reupload { margin-top: 12px; padding: 12px; border: 1px solid #f2c8b5; background: #fff7f2; color: #623b28; }",
       "#" + ROOT_ID + " .ppu-order-status-reupload strong { display: block; margin-bottom: 6px; color: #7c2d12; }",
       "#" + ROOT_ID + " .ppu-order-status-reupload p { margin: 0; line-height: 1.6; }",
+      "#" + ROOT_ID + " .ppu-order-status-button { display: inline-block; margin-top: 10px; padding: 9px 14px; border: 1px solid #7c2d12; background: #7c2d12; color: #fff; text-decoration: none; font-size: 13px; font-weight: 700; line-height: 1.4; }",
+      "#" + ROOT_ID + " .ppu-order-status-button:hover { background: #9a3412; border-color: #9a3412; color: #fff; }",
       "@media (max-width: 640px) { #" + ROOT_ID + " { margin: 14px 0; padding: 15px; } #" + ROOT_ID + " .ppu-order-status-row { display: block; } #" + ROOT_ID + " .ppu-order-status-term { display: block; margin-bottom: 2px; } }"
     ].join("\n");
     document.head.appendChild(style);
@@ -248,8 +250,18 @@
     var file = data.file;
     var reupload = data.reupload || {};
     var reuploadHtml = "";
+    var reuploadButtonHtml = "";
     if (reupload.requested || reupload.status) {
       var pendingButtonText = reupload.requested ? "<p>재업로드 버튼은 추후 제공 예정입니다.</p>" : "";
+      if (reupload.available && reupload.url) {
+        reuploadButtonHtml =
+          '<a class="ppu-order-status-button" href="' +
+          escapeHtml(reupload.url) +
+          '">' +
+          escapeHtml(reupload.button_label || "파일 재업로드하기") +
+          "</a>";
+        pendingButtonText = reuploadButtonHtml;
+      }
       reuploadHtml =
         '<div class="ppu-order-status-reupload">' +
         "<strong>" +

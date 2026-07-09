@@ -3,7 +3,8 @@
 import { useState, type ChangeEvent, type FormEvent } from "react";
 
 type ReuploadCustomerUploadFormProps = {
-  token: string;
+  token?: string;
+  publicId?: string;
 };
 
 type ReuploadUploadResponse = {
@@ -48,7 +49,7 @@ function validateFileList(files: FileList | null) {
   return null;
 }
 
-export function ReuploadCustomerUploadForm({ token }: ReuploadCustomerUploadFormProps) {
+export function ReuploadCustomerUploadForm({ token, publicId }: ReuploadCustomerUploadFormProps) {
   const [file, setFile] = useState<File | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -86,7 +87,12 @@ export function ReuploadCustomerUploadForm({ token }: ReuploadCustomerUploadForm
 
     try {
       const formData = new FormData();
-      formData.append("token", token);
+      if (token) {
+        formData.append("token", token);
+      }
+      if (publicId) {
+        formData.append("public_id", publicId);
+      }
       formData.append("file", file);
 
       const response = await fetch("/api/reupload/upload", {

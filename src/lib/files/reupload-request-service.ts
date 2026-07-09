@@ -16,6 +16,7 @@ export type FileReuploadRequestStatus =
 
 export type FileReuploadRequestRecord = {
   id: string;
+  public_id: string | null;
   original_file_id: string;
   new_file_id: string | null;
   order_id: string | null;
@@ -59,6 +60,13 @@ export type CompleteReuploadRequestInput = {
   userAgent?: string | null;
 };
 
+export type CompleteReuploadRequestByPublicIdInput = {
+  publicId: string;
+  file: File;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+};
+
 export type CompleteReuploadRequestResult = {
   request: FileReuploadRequestRecord;
   file: Pick<UploadedFileRecord, "id" | "original_filename" | "file_size" | "mime_type" | "status" | "created_at">;
@@ -66,6 +74,7 @@ export type CompleteReuploadRequestResult = {
 
 const REUPLOAD_REQUEST_SELECT = [
   "id",
+  "public_id",
   "original_file_id",
   "new_file_id",
   "order_id",
@@ -119,6 +128,8 @@ const REUPLOAD_BLOCKED_EXTENSIONS = new Set([
 
 const DEFAULT_UPLOAD_MAX_FILE_SIZE_MB = 10;
 const STORAGE_PROVIDER = "naver-object-storage";
+const PUBLIC_REUPLOAD_ID_LENGTH = 32;
+const PUBLIC_REUPLOAD_ID_PATTERN = /^[A-Za-z0-9_-]{16,80}$/;
 
 function sanitizeText(value?: string | null, maxLength = 1000) {
   if (!value) {
@@ -188,6 +199,10 @@ export function createRawReuploadToken() {
   return randomBytes(32).toString("base64url");
 }
 
+export function createPublicReuploadId() {
+  return nanoid(PUBLIC_REUPLOAD_ID_LENGTH);
+}
+
 export function hashReuploadToken(rawToken: string) {
   return createHash("sha256").update(rawToken).digest("hex");
 }
@@ -202,6 +217,27 @@ async function getReuploadRequestByTokenHash(tokenHash: string) {
 
   if (error) {
     console.error("file_reupload_request_token_lookup_failed", {
+      code: error.code ?? null,
+      message: sanitizeErrorMessage(error.message),
+      details: sanitizeErrorMessage(error.details),
+      hint: sanitizeErrorMessage(error.hint)
+    });
+    throw new Error("Failed to load file reupload request.");
+  }
+
+  return data ? (data as unknown as FileReuploadRequestRecord) : null;
+}
+
+async function getReuploadRequestByPublicId(publicId: string) {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("file_reupload_requests")
+    .select(REUPLOAD_REQUEST_SELECT)
+    .eq("public_id", publicId)
+    .maybeSingle();
+
+  if (error) {
+    console.error("file_reupload_request_public_id_lookup_failed", {
       code: error.code ?? null,
       message: sanitizeErrorMessage(error.message),
       details: sanitizeErrorMessage(error.details),
@@ -250,6 +286,34 @@ export async function lookupReuploadRequestByRawToken(rawToken?: string | null):
   }
 
   const request = await getReuploadRequestByTokenHash(hashReuploadToken(token));
+  if (!request) {
+    return { state: "invalid" };
+  }
+
+  const unavailableState = getRequestUnavailableState(request);
+  if (unavailableState) {
+    return { state: unavailableState, request };
+  }
+
+  const originalFile = await getFileById(request.original_file_id);
+  if (!originalFile) {
+    return { state: "invalid", request, originalFile };
+  }
+
+  return {
+    state: "valid",
+    request,
+    originalFile
+  };
+}
+
+export async function lookupReuploadRequestByPublicId(publicId?: string | null): Promise<ReuploadRequestLookupResult> {
+  const id = publicId?.trim();
+  if (!id || !PUBLIC_REUPLOAD_ID_PATTERN.test(id)) {
+    return { state: "invalid" };
+  }
+
+  const request = await getReuploadRequestByPublicId(id);
   if (!request) {
     return { state: "invalid" };
   }
@@ -405,14 +469,86 @@ export async function completeFileReuploadRequest(input: CompleteReuploadRequest
         message: sanitizeErrorMessage(error.message),
         details: sanitizeErrorMessage(error.details),
         hint: sanitizeErrorMessage(error.hint),
-        requestId: lookup.request.id,
-        newFileId: uploadedFile.id
+        requestId: lookup.request.id
       });
       throw new Error("재업로드 요청 상태를 갱신하지 못했습니다.");
     }
 
     if (!data) {
       throw new Error("이미 처리된 재업로드 요청입니다.");
+    }
+
+    return {
+      request: data as unknown as FileReuploadRequestRecord,
+      file: {
+        id: uploadedFile.id,
+        original_filename: uploadedFile.original_filename,
+        file_size: uploadedFile.file_size,
+        mime_type: uploadedFile.mime_type,
+        status: uploadedFile.status,
+        created_at: uploadedFile.created_at
+      }
+    };
+  } catch (error) {
+    await markReuploadAttemptFailed({
+      request: lookup.request,
+      message: error instanceof Error ? error.message : "Unknown reupload error",
+      ipAddress: input.ipAddress,
+      userAgent: input.userAgent
+    });
+    throw error;
+  }
+}
+
+export async function completeFileReuploadRequestByPublicId(
+  input: CompleteReuploadRequestByPublicIdInput
+): Promise<CompleteReuploadRequestResult> {
+  const lookup = await lookupReuploadRequestByPublicId(input.publicId);
+  if (lookup.state !== "valid") {
+    throw new Error("?좏슚?섏? ?딄굅???ъ슜?????녿뒗 ?ъ뾽濡쒕뱶 留곹겕?낅땲??");
+  }
+
+  try {
+    const uploadedFile = await createReuploadedFile({
+      request: lookup.request,
+      originalFile: lookup.originalFile,
+      file: input.file
+    });
+
+    const now = new Date().toISOString();
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from("file_reupload_requests")
+      .update({
+        new_file_id: uploadedFile.id,
+        status: "uploaded" satisfies FileReuploadRequestStatus,
+        used_at: now,
+        updated_at: now,
+        customer_ip: sanitizeText(input.ipAddress, 120),
+        customer_user_agent: sanitizeText(input.userAgent, 500),
+        upload_attempt_count: (lookup.request.upload_attempt_count ?? 0) + 1,
+        last_error_message: null
+      })
+      .eq("id", lookup.request.id)
+      .eq("status", "requested")
+      .is("new_file_id", null)
+      .is("used_at", null)
+      .select(REUPLOAD_REQUEST_SELECT)
+      .maybeSingle();
+
+    if (error) {
+      console.error("file_reupload_request_complete_failed", {
+        code: error.code ?? null,
+        message: sanitizeErrorMessage(error.message),
+        details: sanitizeErrorMessage(error.details),
+        hint: sanitizeErrorMessage(error.hint),
+        requestId: lookup.request.id
+      });
+      throw new Error("?ъ뾽濡쒕뱶 ?붿껌 ?곹깭瑜?媛깆떊?섏? 紐삵뻽?듬땲??");
+    }
+
+    if (!data) {
+      throw new Error("?대? 泥섎━???ъ뾽濡쒕뱶 ?붿껌?낅땲??");
     }
 
     return {
@@ -493,11 +629,13 @@ export async function createFileReuploadRequest(input: CreateFileReuploadRequest
 
   const rawToken = createRawReuploadToken();
   const tokenHash = hashReuploadToken(rawToken);
+  const publicId = createPublicReuploadId();
   const now = new Date();
   const expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
   const nowIso = now.toISOString();
 
   const payload = {
+    public_id: publicId,
     original_file_id: file.id,
     new_file_id: null,
     order_id: sanitizeText(file.order_id, 120),

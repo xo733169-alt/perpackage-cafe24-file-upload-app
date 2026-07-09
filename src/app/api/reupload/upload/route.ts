@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { completeFileReuploadRequest } from "@/lib/files/reupload-request-service";
+import {
+  completeFileReuploadRequest,
+  completeFileReuploadRequestByPublicId
+} from "@/lib/files/reupload-request-service";
 
 function getClientIp(request: NextRequest) {
   return (
@@ -21,9 +24,12 @@ export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
     const rawToken = formData.get("token");
+    const publicId = formData.get("public_id");
     const file = formData.get("file");
+    const hasToken = typeof rawToken === "string" && Boolean(rawToken.trim());
+    const hasPublicId = typeof publicId === "string" && Boolean(publicId.trim());
 
-    if (typeof rawToken !== "string" || !rawToken.trim()) {
+    if (!hasToken && !hasPublicId) {
       return NextResponse.json(
         { ok: false, message: "재업로드 링크가 올바르지 않습니다." },
         { status: 400 }
@@ -37,12 +43,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = await completeFileReuploadRequest({
-      rawToken,
+    const commonInput = {
       file,
       ipAddress: getClientIp(request),
       userAgent: request.headers.get("user-agent")
-    });
+    };
+    const result = hasToken
+      ? await completeFileReuploadRequest({
+          rawToken: rawToken as string,
+          ...commonInput
+        })
+      : await completeFileReuploadRequestByPublicId({
+          publicId: publicId as string,
+          ...commonInput
+        });
 
     return NextResponse.json({
       ok: true,
