@@ -30,7 +30,7 @@ const BLOCKED_EXTENSIONS = new Set([
 const DIRECT_EXTENSION_ERROR =
   "업로드할 수 없는 파일 형식입니다. AI, PDF, EPS, JPG, PNG 또는 ZIP 파일만 업로드해 주세요.";
 const ZIP_ENTRY_ERROR =
-  "ZIP 파일 안에 업로드할 수 없는 파일이 포함되어 있습니다. 허용 파일만 남긴 뒤 다시 압축해 업로드해 주세요.";
+  "ZIP 파일 안에 업로드할 수 없는 파일이 포함되어 있습니다. AI, PDF, EPS, JPG, PNG 파일만 남긴 뒤 다시 압축해 업로드해 주세요.";
 const ZIP_PATH_ERROR =
   "ZIP 파일 안에 안전하지 않은 파일 경로가 포함되어 있습니다. 다시 압축해 업로드해 주세요.";
 const ZIP_READ_ERROR =

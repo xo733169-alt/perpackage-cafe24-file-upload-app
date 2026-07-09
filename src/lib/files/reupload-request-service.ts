@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "crypto";
 import { nanoid } from "nanoid";
 import { getFileById } from "@/lib/files/file-service";
 import type { UploadedFileRecord } from "@/lib/files/types";
+import { getExtension, validateUploadFile } from "@/lib/files/upload-security";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { uploadToNaverObjectStorage } from "@/lib/storage/naver-object-storage";
 
@@ -102,31 +103,6 @@ const REUPLOAD_STATUS_LABELS: Record<FileReuploadRequestStatus, string> = {
   failed: "처리 실패"
 };
 
-const REUPLOAD_ALLOWED_EXTENSIONS = new Set([
-  ".ai",
-  ".pdf",
-  ".eps",
-  ".zip",
-  ".jpg",
-  ".jpeg",
-  ".png",
-  ".psd"
-]);
-
-const REUPLOAD_BLOCKED_EXTENSIONS = new Set([
-  ".exe",
-  ".bat",
-  ".cmd",
-  ".sh",
-  ".js",
-  ".msi",
-  ".dll",
-  ".php",
-  ".html",
-  ".htm"
-]);
-
-const DEFAULT_UPLOAD_MAX_FILE_SIZE_MB = 10;
 const STORAGE_PROVIDER = "naver-object-storage";
 const PUBLIC_REUPLOAD_ID_LENGTH = 32;
 const PUBLIC_REUPLOAD_ID_PATTERN = /^[A-Za-z0-9_-]{16,80}$/;
@@ -146,37 +122,6 @@ function sanitizeErrorMessage(message?: string | null) {
 function sanitizeFilename(filename: string) {
   const normalized = filename.normalize("NFKC").replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, " ").trim();
   return normalized || "reupload-file";
-}
-
-function getExtension(filename: string) {
-  const index = filename.lastIndexOf(".");
-  if (index === -1) return "";
-  return filename.slice(index).toLowerCase();
-}
-
-function getUploadLimitBytes() {
-  const mb = Number(process.env.UPLOAD_MAX_FILE_SIZE_MB ?? DEFAULT_UPLOAD_MAX_FILE_SIZE_MB);
-  const safeMb = Number.isFinite(mb) && mb > 0 ? mb : DEFAULT_UPLOAD_MAX_FILE_SIZE_MB;
-  return safeMb * 1024 * 1024;
-}
-
-function assertAllowedReuploadFile(file: File) {
-  if (file.size <= 0) {
-    throw new Error("비어 있는 파일은 업로드할 수 없습니다.");
-  }
-
-  if (file.size > getUploadLimitBytes()) {
-    throw new Error("파일 용량이 현재 업로드 제한을 초과했습니다.");
-  }
-
-  const extension = getExtension(file.name);
-  if (REUPLOAD_BLOCKED_EXTENSIONS.has(extension)) {
-    throw new Error("보안상 업로드할 수 없는 파일 형식입니다.");
-  }
-
-  if (!REUPLOAD_ALLOWED_EXTENSIONS.has(extension)) {
-    throw new Error("AI, PDF, EPS, ZIP, JPG, PNG, PSD 파일만 업로드할 수 있습니다.");
-  }
 }
 
 function buildReuploadStoragePath(input: {
@@ -340,8 +285,6 @@ async function createReuploadedFile(input: {
   originalFile: UploadedFileRecord;
   file: File;
 }) {
-  assertAllowedReuploadFile(input.file);
-
   const originalFilename = sanitizeFilename(input.file.name);
   const storedFilename = `${Date.now()}-${nanoid(10)}${getExtension(originalFilename)}`;
   const storagePath = buildReuploadStoragePath({
@@ -351,6 +294,10 @@ async function createReuploadedFile(input: {
     storedFilename
   });
   const buffer = Buffer.from(await input.file.arrayBuffer());
+  validateUploadFile({
+    file: input.file,
+    buffer
+  });
   const uploaded = await uploadToNaverObjectStorage({
     key: storagePath,
     body: buffer,

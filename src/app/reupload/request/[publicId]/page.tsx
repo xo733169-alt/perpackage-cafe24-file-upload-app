@@ -138,7 +138,7 @@ export default async function PublicReuploadRequestPage({ params }: PublicReuplo
       <section className="panel panel-pad">
         <h2>수정 파일 업로드</h2>
         <p className="lead">
-          AI, PDF, EPS, ZIP, JPG, PNG, PSD 파일을 업로드할 수 있습니다. 실행 파일이나 웹 문서 형식은 업로드할 수 없습니다.
+          AI, PDF, EPS, JPG, PNG, ZIP 파일을 업로드할 수 있습니다. ZIP 안에는 AI, PDF, EPS, JPG, PNG 파일만 포함해 주세요. 실행 파일이나 문서 형식은 업로드할 수 없습니다.
         </p>
         <div style={{ marginTop: 18 }}>
           <ReuploadCustomerUploadForm publicId={publicId} />

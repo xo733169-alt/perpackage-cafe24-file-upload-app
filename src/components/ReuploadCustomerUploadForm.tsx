@@ -20,7 +20,7 @@ type ReuploadUploadResponse = {
   };
 };
 
-const allowedExtensions = new Set(["ai", "pdf", "eps", "zip", "jpg", "jpeg", "png", "psd"]);
+const allowedExtensions = new Set(["ai", "pdf", "eps", "zip", "jpg", "jpeg", "png"]);
 const blockedExtensions = new Set(["exe", "bat", "cmd", "sh", "js", "msi", "dll", "php", "html", "htm"]);
 
 function getExtension(filename: string) {
@@ -43,7 +43,7 @@ function validateFileList(files: FileList | null) {
   }
 
   if (!allowedExtensions.has(extension)) {
-    return "AI, PDF, EPS, ZIP, JPG, PNG, PSD 파일만 업로드할 수 있습니다.";
+    return "AI, PDF, EPS, JPG, PNG 또는 ZIP 파일만 업로드해 주세요.";
   }
 
   return null;
@@ -135,7 +135,7 @@ export function ReuploadCustomerUploadForm({ token, publicId }: ReuploadCustomer
       <div className="field">
         <label htmlFor="reupload_file">수정 파일 선택</label>
         <input
-          accept=".ai,.pdf,.eps,.zip,.jpg,.jpeg,.png,.psd"
+          accept=".ai,.pdf,.eps,.zip,.jpg,.jpeg,.png"
           id="reupload_file"
           name="file"
           onChange={handleFileChange}
@@ -145,7 +145,7 @@ export function ReuploadCustomerUploadForm({ token, publicId }: ReuploadCustomer
       <div className="notice">
         파일은 1개만 업로드 가능합니다.
         <br />
-        여러 파일을 전달해야 하는 경우 AI, PDF, 이미지, 칼선 파일 등을 하나의 ZIP 파일로 압축해 업로드해 주세요.
+        ZIP 안에는 AI, PDF, EPS, JPG, PNG 파일만 포함해 주세요.
       </div>
       <button className="button" disabled={isSubmitting} type="submit">
         {isSubmitting ? "업로드 중..." : "수정 파일 업로드"}
