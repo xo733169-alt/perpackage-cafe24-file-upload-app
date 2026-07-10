@@ -2,6 +2,7 @@
 
 import { useMemo, useState, type FormEvent } from "react";
 import { AdminDownloadLink } from "@/components/AdminDownloadLogRefreshControls";
+import { isActiveReuploadRequest } from "@/lib/files/reupload-request-policy";
 import type { FileReuploadRequestRecord } from "@/lib/files/reupload-request-service";
 
 type ReuploadLinkCreatePanelProps = {
@@ -49,12 +50,7 @@ function formatEmpty(value: string | null | undefined) {
 }
 
 function hasActiveRequestedRequest(requests: FileReuploadRequestRecord[]) {
-  const now = Date.now();
-  return requests.some((request) => (
-    request.status === "requested" &&
-    !request.used_at &&
-    new Date(request.expires_at).getTime() > now
-  ));
+  return requests.some((request) => isActiveReuploadRequest(request));
 }
 
 function getShortFileId(fileId: string) {
@@ -119,7 +115,7 @@ export function ReuploadLinkCreatePanel({
       const result = await response.json() as CreateReuploadRequestResponse;
 
       if (!response.ok || !result.ok || !result.request || !result.reupload_url || !result.message) {
-        throw new Error(result.message || "재업로드 링크 생성에 실패했습니다.");
+        throw new Error(result.message || "재업로드 요청 생성에 실패했습니다.");
       }
 
       setRequests((currentRequests) => [result.request!, ...currentRequests]);
@@ -127,7 +123,7 @@ export function ReuploadLinkCreatePanel({
       setGeneratedMessage(result.message);
       setStatusMessage("재업로드 링크가 생성되었습니다.");
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "재업로드 링크 생성에 실패했습니다.");
+      setErrorMessage(error instanceof Error ? error.message : "재업로드 요청 생성에 실패했습니다.");
     } finally {
       setIsSubmitting(false);
     }
@@ -135,14 +131,14 @@ export function ReuploadLinkCreatePanel({
 
   return (
     <div className="notice" style={{ marginTop: 16 }}>
-      <h3 style={{ marginTop: 0 }}>재업로드 링크 생성</h3>
+      <h3 style={{ marginTop: 0 }}>재업로드 요청 생성</h3>
       <p>
-        고객에게 전달할 재업로드 요청 record와 7일 유효 링크를 생성합니다.
-        raw token은 생성 직후 링크에만 포함되며 DB에는 저장하지 않습니다.
+        요청 사유와 고객 안내를 한 번 입력하면 요청 기록, 7일 유효 링크, 복사용 안내문을 함께 생성합니다.
+        보안 token 원문은 생성된 링크에만 사용하며 DB에는 저장하지 않습니다.
       </p>
       {hasActiveRequest ? (
         <div className="notice" style={{ marginTop: 12 }}>
-          기존 유효 요청이 있습니다. 이번 단계에서는 요청 생성을 허용하지만, 고객에게 전달할 최신 링크를 확인해 주세요.
+          기존 유효 요청이 있습니다. 중복 요청을 만들지 않고 기존 요청을 사용해 주세요.
         </div>
       ) : null}
       <div className="grid grid-3" style={{ marginTop: 12 }}>
@@ -181,8 +177,8 @@ export function ReuploadLinkCreatePanel({
             value={customerMessage}
           />
         </div>
-        <button className="button" disabled={isSubmitting} type="submit">
-          {isSubmitting ? "생성 중..." : "재업로드 링크 생성"}
+        <button className="button" disabled={isSubmitting || hasActiveRequest} type="submit">
+          {isSubmitting ? "생성 중..." : "재업로드 요청 생성"}
         </button>
       </form>
 

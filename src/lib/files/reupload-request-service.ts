@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "crypto";
 import { nanoid } from "nanoid";
 import { getFileById } from "@/lib/files/file-service";
+import { isActiveReuploadRequest } from "@/lib/files/reupload-request-policy";
 import type { UploadedFileRecord } from "@/lib/files/types";
 import { getExtension, validateUploadFile } from "@/lib/files/upload-security";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
@@ -33,6 +34,13 @@ export type FileReuploadRequestRecord = {
   customer_user_agent: string | null;
   upload_attempt_count: number;
   last_error_message: string | null;
+};
+
+export type ReuploadReviewQueueRecord = Pick<
+  FileReuploadRequestRecord,
+  "id" | "original_file_id" | "new_file_id" | "order_id" | "status" | "created_at" | "updated_at"
+> & {
+  new_file: Pick<UploadedFileRecord, "id" | "original_filename" | "status" | "created_at">;
 };
 
 export type CreateFileReuploadRequestInput = {
@@ -72,6 +80,13 @@ export type CompleteReuploadRequestResult = {
   request: FileReuploadRequestRecord;
   file: Pick<UploadedFileRecord, "id" | "original_filename" | "file_size" | "mime_type" | "status" | "created_at">;
 };
+
+export class ActiveReuploadRequestExistsError extends Error {
+  constructor() {
+    super("An active reupload request already exists for this file.");
+    this.name = "ActiveReuploadRequestExistsError";
+  }
+}
 
 const REUPLOAD_REQUEST_SELECT = [
   "id",
@@ -574,10 +589,34 @@ export async function createFileReuploadRequest(input: CreateFileReuploadRequest
     throw new Error("Uploaded file was not found.");
   }
 
+  const supabase = getSupabaseAdmin();
+  const now = new Date();
+  const { data: existingRequests, error: existingRequestError } = await supabase
+    .from("file_reupload_requests")
+    .select("status, expires_at, used_at, new_file_id")
+    .eq("original_file_id", file.id)
+    .eq("status", "requested")
+    .is("used_at", null)
+    .is("new_file_id", null)
+    .gt("expires_at", now.toISOString())
+    .limit(1);
+
+  if (existingRequestError) {
+    console.error("active_file_reupload_request_lookup_failed", {
+      code: existingRequestError.code ?? null,
+      message: sanitizeErrorMessage(existingRequestError.message),
+      fileId: file.id
+    });
+    throw new Error("Failed to check existing reupload requests.");
+  }
+
+  if ((existingRequests ?? []).some((request) => isActiveReuploadRequest(request, now.getTime()))) {
+    throw new ActiveReuploadRequestExistsError();
+  }
+
   const rawToken = createRawReuploadToken();
   const tokenHash = hashReuploadToken(rawToken);
   const publicId = createPublicReuploadId();
-  const now = new Date();
   const expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
   const nowIso = now.toISOString();
 
@@ -600,7 +639,6 @@ export async function createFileReuploadRequest(input: CreateFileReuploadRequest
     last_error_message: null
   };
 
-  const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("file_reupload_requests")
     .insert(payload)
@@ -685,4 +723,61 @@ export async function listFileReuploadRequestsByNewFileId(
   }
 
   return (data ?? []) as unknown as FileReuploadRequestRecord[];
+}
+
+export async function listRecentReuploadReviewQueue(
+  limit = 10
+): Promise<ReuploadReviewQueueRecord[]> {
+  const safeLimit = Math.max(1, Math.min(limit, 50));
+  const supabase = getSupabaseAdmin();
+  const { data: requestData, error } = await supabase
+    .from("file_reupload_requests")
+    .select("id, original_file_id, new_file_id, order_id, status, created_at, updated_at")
+    .eq("status", "uploaded")
+    .not("new_file_id", "is", null)
+    .order("updated_at", { ascending: false })
+    .limit(Math.min(safeLimit * 3, 50));
+
+  if (error) {
+    console.error("reupload_review_queue_load_failed", {
+      code: error.code ?? null,
+      message: sanitizeErrorMessage(error.message)
+    });
+    throw new Error("Failed to load reupload review queue.");
+  }
+
+  const requests = (requestData ?? []) as unknown as Array<Omit<ReuploadReviewQueueRecord, "new_file">>;
+  const newFileIds = requests
+    .map((request) => request.new_file_id?.trim())
+    .filter((fileId): fileId is string => Boolean(fileId));
+
+  if (!newFileIds.length) {
+    return [];
+  }
+
+  const { data: fileData, error: fileError } = await supabase
+    .from("files")
+    .select("id, original_filename, status, created_at")
+    .in("id", newFileIds)
+    .in("status", ["uploaded_pending", "reviewing"]);
+
+  if (fileError) {
+    console.error("reupload_review_queue_files_load_failed", {
+      code: fileError.code ?? null,
+      message: sanitizeErrorMessage(fileError.message)
+    });
+    throw new Error("Failed to load reupload review files.");
+  }
+
+  const filesById = new Map(
+    ((fileData ?? []) as Array<ReuploadReviewQueueRecord["new_file"]>).map((file) => [file.id, file])
+  );
+
+  return requests
+    .map((request) => {
+      const newFile = request.new_file_id ? filesById.get(request.new_file_id) : null;
+      return newFile ? { ...request, new_file: newFile } : null;
+    })
+    .filter((request): request is ReuploadReviewQueueRecord => Boolean(request))
+    .slice(0, safeLimit);
 }

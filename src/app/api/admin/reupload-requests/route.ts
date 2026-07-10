@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ADMIN_SESSION_COOKIE_NAME, verifyAdminSessionToken } from "@/lib/admin/auth";
 import {
+  ActiveReuploadRequestExistsError,
   buildReuploadRequestMessage,
   createFileReuploadRequest
 } from "@/lib/files/reupload-request-service";
@@ -87,6 +88,10 @@ export async function POST(request: NextRequest) {
       message
     });
   } catch (error) {
+    if (error instanceof ActiveReuploadRequestExistsError) {
+      return jsonError("이 파일에는 아직 사용 가능한 재업로드 요청이 있습니다. 기존 요청을 확인해 주세요.", 409);
+    }
+
     const message = error instanceof Error ? error.message : "Failed to create file reupload request.";
     const status = message === "Uploaded file was not found." ? 404 : 500;
     return jsonError(message, status);

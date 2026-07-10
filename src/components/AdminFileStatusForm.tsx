@@ -2,7 +2,11 @@
 
 import { FormEvent, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { FILE_STATUS_OPTIONS, getFileStatusLabel } from "@/lib/files/file-status";
+import {
+  FILE_STATUS_OPTIONS,
+  getAllowedFileStatusTransitions,
+  getFileStatusLabel
+} from "@/lib/files/file-status";
 
 type AdminFileStatusFormProps = {
   fileId: string;
@@ -17,6 +21,8 @@ export function AdminFileStatusForm({ fileId, currentStatus, variant = "default"
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const isCompact = variant === "compact";
+  const allowedStatuses = new Set([currentStatus, ...getAllowedFileStatusTransitions(currentStatus)]);
+  const statusOptions = FILE_STATUS_OPTIONS.filter((option) => allowedStatuses.has(option.value));
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -28,6 +34,7 @@ export function AdminFileStatusForm({ fileId, currentStatus, variant = "default"
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           file_id: fileId,
+          expected_status: currentStatus,
           status,
           memo
         })
@@ -67,7 +74,7 @@ export function AdminFileStatusForm({ fileId, currentStatus, variant = "default"
             onChange={(event) => setStatus(event.target.value)}
             value={status}
           >
-            {FILE_STATUS_OPTIONS.map((option) => (
+            {statusOptions.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
               </option>

@@ -1,4 +1,6 @@
 import { nanoid } from "nanoid";
+import { getFileOrderRpcErrorKind, getFileStatusRpcErrorKind } from "@/lib/files/file-admin-rpc-policy";
+import type { FileOrderLinkSource } from "@/lib/files/order-link-log-service";
 import { isKnownFileStatus } from "@/lib/files/file-status";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { uploadToNaverObjectStorage } from "@/lib/storage/naver-object-storage";
@@ -13,6 +15,51 @@ export type ListRecentFilesFilters = {
   status?: string;
   orderLink?: RecentFileOrderLinkFilter;
 };
+
+export class FileOrderLinkConflictError extends Error {
+  constructor() {
+    super("Uploaded file is already linked to another order.");
+    this.name = "FileOrderLinkConflictError";
+  }
+}
+
+export class FileStatusTransitionError extends Error {
+  constructor() {
+    super("The requested file status transition is not allowed.");
+    this.name = "FileStatusTransitionError";
+  }
+}
+
+export class FileStatusConcurrentChangeError extends Error {
+  constructor() {
+    super("The file status changed while the update was being processed.");
+    this.name = "FileStatusConcurrentChangeError";
+  }
+}
+
+type AdminLinkFileOrderRpcRow = {
+  changed: boolean;
+  file_id: string;
+  previous_order_id: string | null;
+  current_order_id: string;
+  updated_at: string;
+};
+
+type AdminUpdateFileStatusRpcRow = {
+  changed: boolean;
+  file_id: string;
+  previous_status: string;
+  current_status: string;
+  updated_at: string;
+};
+
+function getFirstRpcRow<T>(data: unknown): T | null {
+  if (Array.isArray(data)) {
+    return (data[0] as T | undefined) ?? null;
+  }
+
+  return data && typeof data === "object" ? data as T : null;
+}
 
 function sanitizeFilename(filename: string) {
   const normalized = filename.normalize("NFKC").replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, " ").trim();
@@ -180,7 +227,19 @@ export async function listFilesByOrderId(orderId: string): Promise<UploadedFileR
 export async function updateFileOrderId(input: {
   fileId: string;
   orderId: string;
-}): Promise<UploadedFileRecord> {
+  linkSource: FileOrderLinkSource;
+  webhookEventId?: string | null;
+  adminUser?: string | null;
+  memo?: string | null;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+}): Promise<{
+  changed: boolean;
+  fileId: string;
+  previousOrderId: string | null;
+  currentOrderId: string;
+  updatedAt: string;
+}> {
   const fileId = input.fileId.trim();
   const orderId = input.orderId.trim();
 
@@ -193,36 +252,63 @@ export async function updateFileOrderId(input: {
   }
 
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("files")
-    .update({
-      order_id: orderId,
-      updated_at: new Date().toISOString()
-    })
-    .eq("id", fileId)
-    .select("*")
-    .maybeSingle();
+  const { data, error } = await supabase.rpc("admin_link_file_order", {
+    p_file_id: fileId,
+    p_order_id: orderId,
+    p_link_source: input.linkSource,
+    p_webhook_event_id: input.webhookEventId ?? null,
+    p_admin_user: input.adminUser ?? "admin",
+    p_memo: input.memo ?? null,
+    p_ip_address: input.ipAddress ?? null,
+    p_user_agent: input.userAgent ?? null
+  });
 
   if (error) {
-    console.error("update_file_order_id_failed", {
+    const errorKind = getFileOrderRpcErrorKind(error.message);
+    if (errorKind === "conflict") {
+      throw new FileOrderLinkConflictError();
+    }
+
+    if (errorKind === "not_found") {
+      throw new Error("Uploaded file was not found.");
+    }
+
+    console.error("admin_link_file_order_rpc_failed", {
       code: error.code ?? null,
       message: error.message ?? null
     });
-    throw new Error("Failed to update uploaded file order_id.");
+    throw new Error("Failed to link uploaded file order_id.");
   }
 
-  if (!data) {
-    throw new Error("Uploaded file was not found.");
+  const result = getFirstRpcRow<AdminLinkFileOrderRpcRow>(data);
+  if (!result) {
+    throw new Error("Admin order link RPC returned no result.");
   }
 
-  return data as UploadedFileRecord;
+  return {
+    changed: result.changed,
+    fileId: result.file_id,
+    previousOrderId: result.previous_order_id,
+    currentOrderId: result.current_order_id,
+    updatedAt: result.updated_at
+  };
 }
 
 export async function updateFileStatus(input: {
   fileId: string;
+  expectedStatus: string;
   status: string;
-}): Promise<{ file: UploadedFileRecord; previousStatus: string | null }> {
+  memo?: string | null;
+  adminUser?: string | null;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+}): Promise<{
+  file: Pick<UploadedFileRecord, "id" | "status" | "updated_at">;
+  previousStatus: string;
+  changed: boolean;
+}> {
   const fileId = input.fileId.trim();
+  const expectedStatus = input.expectedStatus.trim();
   const status = input.status.trim();
 
   if (!fileId) {
@@ -233,40 +319,54 @@ export async function updateFileStatus(input: {
     throw new Error("status is required.");
   }
 
-  if (!isKnownFileStatus(status)) {
+  if (!isKnownFileStatus(expectedStatus) || !isKnownFileStatus(status)) {
     throw new Error("Unsupported file status.");
   }
 
-  const previousFile = await getFileById(fileId);
-  if (!previousFile) {
-    throw new Error("Uploaded file was not found.");
-  }
-
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("files")
-    .update({
-      status,
-      updated_at: new Date().toISOString()
-    })
-    .eq("id", fileId)
-    .select("*")
-    .maybeSingle();
+  const { data, error } = await supabase.rpc("admin_update_file_status", {
+    p_file_id: fileId,
+    p_expected_status: expectedStatus,
+    p_new_status: status,
+    p_memo: input.memo ?? null,
+    p_admin_user: input.adminUser ?? "admin",
+    p_ip_address: input.ipAddress ?? null,
+    p_user_agent: input.userAgent ?? null
+  });
 
   if (error) {
-    console.error("update_file_status_failed", {
+    const errorKind = getFileStatusRpcErrorKind(error.message);
+    if (errorKind === "transition") {
+      throw new FileStatusTransitionError();
+    }
+
+    if (errorKind === "conflict") {
+      throw new FileStatusConcurrentChangeError();
+    }
+
+    if (errorKind === "not_found") {
+      throw new Error("Uploaded file was not found.");
+    }
+
+    console.error("admin_update_file_status_rpc_failed", {
       code: error.code ?? null,
       message: error.message ?? null
     });
     throw new Error("Failed to update uploaded file status.");
   }
 
-  if (!data) {
-    throw new Error("Uploaded file was not found.");
+  const result = getFirstRpcRow<AdminUpdateFileStatusRpcRow>(data);
+  if (!result) {
+    throw new Error("Admin file status RPC returned no result.");
   }
 
   return {
-    file: data as UploadedFileRecord,
-    previousStatus: previousFile.status ?? null
+    file: {
+      id: result.file_id,
+      status: result.current_status,
+      updated_at: result.updated_at
+    },
+    previousStatus: result.previous_status,
+    changed: result.changed
   };
 }

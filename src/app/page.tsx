@@ -28,19 +28,19 @@ export default function HomePage({ searchParams }: HomePageProps) {
   const launch = hasLaunchQuery
     ? validateCafe24Launch({ searchParams: urlParams, clientSecret: config.clientSecret })
     : { ok: false, reason: "missing_hmac" as const, context: getSafeLaunchContext({}) };
+  const showDevelopmentTools = process.env.NODE_ENV !== "production";
 
   return (
     <main className="grid" style={{ gap: 22 }}>
       <section className="hero">
-        <p className="eyebrow">PHASE 1</p>
-        <h1>Cafe24 앱 실행, OAuth, 파일 업로드 기반 골격</h1>
+        <p className="eyebrow">CAFE24 APP</p>
+        <h1>페르패키지 파일 업로드 연동</h1>
         <p className="lead">
-          이 앱은 페르패키지 내부용 Cafe24 파일 업로드 앱의 1차 개발 골격입니다.
-          아직 상품상세 스크립트 삽입, Webhook 자동 연결, 주문 데이터 자동 연동은 구현하지 않았습니다.
+          Cafe24 상품 파일 접수, 주문 연결, 관리자 검수와 고객 재업로드 흐름을 운영하는 내부 앱입니다.
         </p>
         <div className="nav">
           <a className="button" href="/api/cafe24/auth/start">OAuth 연결 시작</a>
-          <a className="button secondary" href="/upload-test">업로드 테스트</a>
+          {showDevelopmentTools ? <a className="button secondary" href="/upload-test">업로드 테스트</a> : null}
         </div>
       </section>
 
@@ -64,7 +64,7 @@ export default function HomePage({ searchParams }: HomePageProps) {
               </div>
             </div>
           ) : (
-            <p className="lead">Cafe24 앱 실행 query parameter가 없는 개발 확인 화면입니다.</p>
+            <p className="lead">Cafe24 앱에서 실행하거나 관리자 화면에서 운영 상태를 확인해 주세요.</p>
           )}
         </div>
 

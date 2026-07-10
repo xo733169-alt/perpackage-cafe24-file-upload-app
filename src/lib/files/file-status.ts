@@ -9,6 +9,15 @@ export const FILE_STATUS_OPTIONS = [
 
 export type FileStatusValue = (typeof FILE_STATUS_OPTIONS)[number]["value"];
 
+const FILE_STATUS_TRANSITIONS: Record<FileStatusValue, readonly FileStatusValue[]> = {
+  uploaded_pending: ["reviewing", "approved", "need_reupload", "archived"],
+  reviewing: ["approved", "need_reupload", "archived"],
+  approved: ["reviewing", "need_reupload", "archived"],
+  need_reupload: ["reviewing", "approved", "replaced", "archived"],
+  replaced: ["archived"],
+  archived: []
+};
+
 const FILE_STATUS_LABELS = new Map<string, string>(
   FILE_STATUS_OPTIONS.map((option) => [option.value, option.label])
 );
@@ -23,4 +32,16 @@ export function getFileStatusLabel(status?: string | null) {
 
 export function isKnownFileStatus(status: string): status is FileStatusValue {
   return FILE_STATUS_LABELS.has(status);
+}
+
+export function getAllowedFileStatusTransitions(status: string): readonly FileStatusValue[] {
+  return isKnownFileStatus(status) ? FILE_STATUS_TRANSITIONS[status] : [];
+}
+
+export function isFileStatusTransitionAllowed(currentStatus: string, nextStatus: string) {
+  if (!isKnownFileStatus(currentStatus) || !isKnownFileStatus(nextStatus)) {
+    return false;
+  }
+
+  return currentStatus === nextStatus || FILE_STATUS_TRANSITIONS[currentStatus].includes(nextStatus);
 }

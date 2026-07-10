@@ -302,6 +302,105 @@ h2 {
   border-color: var(--brand);
 }
 
+.admin-work-queue-heading,
+.admin-work-queue-group-heading,
+.admin-work-queue-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.admin-work-queue-heading > div,
+.admin-work-queue-group-heading > div,
+.admin-work-queue-list li > div {
+  min-width: 0;
+}
+
+.admin-work-queue-total {
+  flex: 0 0 auto;
+  font-size: 24px;
+}
+
+.admin-work-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 18px;
+  border-block: 1px solid var(--line);
+}
+
+.admin-work-summary > div {
+  display: grid;
+  gap: 4px;
+  padding: 14px 16px;
+  border-right: 1px solid var(--line);
+}
+
+.admin-work-summary > div:last-child {
+  border-right: 0;
+}
+
+.admin-work-summary span,
+.admin-work-queue-group p,
+.admin-work-queue-list span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.admin-work-summary strong {
+  font-size: 22px;
+}
+
+.admin-work-queue-groups {
+  display: grid;
+}
+
+.admin-work-queue-group {
+  padding: 20px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.admin-work-queue-group:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.admin-work-queue-group h3,
+.admin-work-queue-group p {
+  margin-bottom: 4px;
+}
+
+.admin-work-queue-list {
+  display: grid;
+  gap: 0;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.admin-work-queue-list li {
+  min-height: 52px;
+  padding: 9px 0;
+  border-top: 1px solid #edf1f7;
+}
+
+.admin-work-queue-list li > div {
+  display: grid;
+  gap: 3px;
+}
+
+.admin-work-queue-list strong {
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+
+.admin-work-queue-empty {
+  justify-content: flex-start !important;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .table-wrap {
   max-width: 100%;
   overflow-x: auto;
@@ -683,6 +782,35 @@ th {
 
   .topbar {
     display: grid;
+  }
+
+  .admin-work-queue-heading,
+  .admin-work-queue-group-heading,
+  .admin-work-queue-list li {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .admin-work-queue-heading,
+  .admin-work-queue-group-heading {
+    gap: 10px;
+  }
+
+  .admin-work-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-work-summary > div:nth-child(2) {
+    border-right: 0;
+  }
+
+  .admin-work-summary > div:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--line);
+  }
+
+  .admin-work-queue-list .button,
+  .admin-work-queue-group-heading .button {
+    width: 100%;
   }
 
   .hero,

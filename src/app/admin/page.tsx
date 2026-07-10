@@ -10,7 +10,6 @@ import { AdminFileStatusForm } from "@/components/AdminFileStatusForm";
 import { CopyFileIdButton } from "@/components/CopyFileIdButton";
 import { ProofConfirmationMessagePanel } from "@/components/ProofConfirmationMessagePanel";
 import { ReuploadLinkCreatePanel } from "@/components/ReuploadLinkCreatePanel";
-import { ReuploadRequestMessagePanel } from "@/components/ReuploadRequestMessagePanel";
 import { getAdminAuthConfigStatus, isAdminAuthenticated } from "@/lib/admin/auth";
 import { getCafe24ConfigStatus } from "@/lib/cafe24/config";
 import {
@@ -20,8 +19,10 @@ import {
 } from "@/lib/cafe24/order-lookup";
 import { getCafe24Installation } from "@/lib/cafe24/token-store";
 import {
+  listRecentCafe24WebhookAttentionEvents,
   listRecentCafe24WebhookEvents,
   summarizeCafe24WebhookPayload,
+  type Cafe24WebhookAttentionRecord,
   type Cafe24WebhookStatusFilter,
   type Cafe24WebhookProcessedStatus,
   type Cafe24WebhookEventRecord
@@ -53,8 +54,16 @@ import {
 import {
   listFileReuploadRequestsByOriginalFileId,
   listFileReuploadRequestsByNewFileId,
+  listRecentReuploadReviewQueue,
+  type ReuploadReviewQueueRecord,
   type FileReuploadRequestRecord
 } from "@/lib/files/reupload-request-service";
+import {
+  isPendingReviewFileWorkItem,
+  isReuploadReadyForReview,
+  isUnlinkedFileWorkItem,
+  isWebhookAttentionStatus
+} from "@/lib/admin/admin-work-queue";
 import { FILE_STATUS_OPTIONS, getFileStatusLabel, isKnownFileStatus } from "@/lib/files/file-status";
 import {
   getFileById,
@@ -109,9 +118,18 @@ type Cafe24OrderApiLookupState = {
   status: "idle" | "found" | "empty" | "error";
 };
 
+type AdminTodayQueueState = {
+  unlinkedFiles: UploadedFileRecord[];
+  pendingReviewFiles: UploadedFileRecord[];
+  reuploadReviewRequests: ReuploadReviewQueueRecord[];
+  webhookAttentionEvents: Cafe24WebhookAttentionRecord[];
+  warnings: string[];
+};
+
 type AdminPageProps = {
   searchParams?: {
     auth?: string | string[];
+    lookup?: string | string[];
     file_id?: string | string[];
     order_link?: string | string[];
     order_id?: string | string[];
@@ -139,6 +157,7 @@ function readParam(
   searchParams: AdminPageProps["searchParams"],
   key:
     | "auth"
+    | "lookup"
     | "file_id"
     | "order_link"
     | "order_id"
@@ -174,6 +193,10 @@ function hasOrderIdParam(searchParams?: AdminPageProps["searchParams"]) {
 
 function hasCafe24OrderIdParam(searchParams?: AdminPageProps["searchParams"]) {
   return Boolean(searchParams && Object.prototype.hasOwnProperty.call(searchParams, "cafe24_order_id"));
+}
+
+function isFileIdLookup(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
 function formatEmpty(value: string | number | null | undefined, emptyText = "-") {
@@ -345,10 +368,6 @@ function getWebhookEventTypeLabel(eventType: string) {
   return WEBHOOK_EVENT_TYPE_LABELS[eventType] ?? eventType;
 }
 
-function getInternalStorageDisplay(file: UploadedFileRecord) {
-  return file.storage_bucket && file.storage_path ? "숨김 처리" : null;
-}
-
 function getWebhookStatusFilter(value: string): Cafe24WebhookStatusFilter {
   return WEBHOOK_STATUS_FILTER_OPTIONS.some((option) => option.value === value)
     ? (value as Cafe24WebhookStatusFilter)
@@ -485,10 +504,12 @@ function AdminPreservedQueryInputs({
 
 function AdminWorkflowTabs({
   activeTab,
-  preservedQuery
+  fileId,
+  orderId
 }: {
   activeTab: AdminTab;
-  preservedQuery: AdminPreservedQuery;
+  fileId: string;
+  orderId: string;
 }) {
   return (
     <section className="panel panel-pad admin-tabs-panel" aria-labelledby="admin-workflow-tabs-title">
@@ -501,7 +522,13 @@ function AdminWorkflowTabs({
       </div>
       <nav className="admin-tabs" aria-label="관리자 업무 탭">
         {ADMIN_TAB_ITEMS.map((item) => {
-          const href = buildAdminHrefFromPreservedQuery({ ...preservedQuery, tab: item.value });
+          const params = new URLSearchParams({ tab: item.value });
+          if ((item.value === "files" || item.value === "reupload") && fileId) {
+            params.set("file_id", fileId);
+          } else if (item.value === "files" && orderId) {
+            params.set("lookup", orderId);
+          }
+          const href = `/admin?${params.toString()}`;
           const isActive = item.value === activeTab;
 
           return (
@@ -521,18 +548,10 @@ function AdminWorkflowTabs({
   );
 }
 
-function AdminTodayGuide({ preservedQuery }: { preservedQuery: AdminPreservedQuery }) {
-  const pendingHref = buildAdminHrefFromPreservedQuery({
-    ...preservedQuery,
-    tab: "today",
-    recentStatus: "uploaded_pending"
-  });
-  const reuploadHref = buildAdminHrefFromPreservedQuery({ ...preservedQuery, tab: "reupload" });
-  const webhookAttentionHref = buildAdminHrefFromPreservedQuery({
-    ...preservedQuery,
-    tab: "logs",
-    webhookStatus: "failed"
-  });
+function AdminTodayGuide() {
+  const pendingHref = "/admin?tab=today&recent_status=uploaded_pending";
+  const reuploadHref = "/admin?tab=reupload";
+  const webhookAttentionHref = "/admin?tab=logs&webhook_status=failed";
 
   return (
     <section className="panel panel-pad" aria-labelledby="today-work-title">
@@ -561,6 +580,157 @@ function AdminTodayGuide({ preservedQuery }: { preservedQuery: AdminPreservedQue
   );
 }
 
+function formatAdminDateTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("ko-KR", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).format(date);
+}
+
+function AdminTodayWorkQueue({ queue }: { queue: AdminTodayQueueState }) {
+  const totalCount =
+    queue.unlinkedFiles.length +
+    queue.pendingReviewFiles.length +
+    queue.reuploadReviewRequests.length +
+    queue.webhookAttentionEvents.length;
+
+  return (
+    <section className="panel panel-pad" aria-labelledby="admin-today-queue-title">
+      <div className="admin-work-queue-heading">
+        <div>
+          <p className="eyebrow">PRIORITY QUEUE</p>
+          <h2 id="admin-today-queue-title">오늘 우선 처리 작업대</h2>
+          <p className="lead">
+            최근 항목을 운영 우선순위로 자동 분류합니다. 실제 연결, 검수 승인, 교체 처리는 상세 화면에서 확인 후 진행합니다.
+          </p>
+        </div>
+        <strong className="admin-work-queue-total">{totalCount}건</strong>
+      </div>
+
+      {queue.warnings.length ? (
+        <div className="notice" style={{ marginTop: 16 }}>
+          일부 작업 목록을 불러오지 못했습니다: {queue.warnings.join(", ")}
+        </div>
+      ) : null}
+
+      <div className="admin-work-summary" aria-label="오늘 처리 항목 요약">
+        <div><span>주문 미연결</span><strong>{queue.unlinkedFiles.length}</strong></div>
+        <div><span>파일 확인 전</span><strong>{queue.pendingReviewFiles.length}</strong></div>
+        <div><span>재업로드 검수</span><strong>{queue.reuploadReviewRequests.length}</strong></div>
+        <div><span>Webhook 확인</span><strong>{queue.webhookAttentionEvents.length}</strong></div>
+      </div>
+
+      <div className="admin-work-queue-groups">
+        <section className="admin-work-queue-group" aria-labelledby="queue-unlinked-title">
+          <div className="admin-work-queue-group-heading">
+            <div>
+              <h3 id="queue-unlinked-title">1. 주문번호 미연결</h3>
+              <p>주문 완료 후에도 주문번호가 없는 최근 파일입니다.</p>
+            </div>
+            <a className="button secondary button-small" href="/admin?tab=today&recent_order_link=unlinked">전체 보기</a>
+          </div>
+          <ul className="admin-work-queue-list">
+            {queue.unlinkedFiles.length ? queue.unlinkedFiles.map((file) => (
+              <li key={file.id}>
+                <div>
+                  <strong>{file.original_filename}</strong>
+                  <span>{formatAdminDateTime(file.created_at)} · {getFileStatusLabel(file.status)}</span>
+                </div>
+                <a className="button secondary button-small" href={`/admin?tab=files&file_id=${encodeURIComponent(file.id)}`}>
+                  연결 확인
+                </a>
+              </li>
+            )) : <li className="admin-work-queue-empty">확인할 미연결 파일이 없습니다.</li>}
+          </ul>
+        </section>
+
+        <section className="admin-work-queue-group" aria-labelledby="queue-pending-title">
+          <div className="admin-work-queue-group-heading">
+            <div>
+              <h3 id="queue-pending-title">2. 파일 확인 전</h3>
+              <p>주문번호가 연결됐지만 아직 검수를 시작하지 않은 파일입니다.</p>
+            </div>
+            <a className="button secondary button-small" href="/admin?tab=today&recent_status=uploaded_pending&recent_order_link=linked">전체 보기</a>
+          </div>
+          <ul className="admin-work-queue-list">
+            {queue.pendingReviewFiles.length ? queue.pendingReviewFiles.map((file) => (
+              <li key={file.id}>
+                <div>
+                  <strong>{file.original_filename}</strong>
+                  <span>{file.order_id ?? "주문번호 없음"} · {formatAdminDateTime(file.created_at)}</span>
+                </div>
+                <a className="button secondary button-small" href={`/admin?tab=files&file_id=${encodeURIComponent(file.id)}`}>
+                  파일 검수
+                </a>
+              </li>
+            )) : <li className="admin-work-queue-empty">새로 확인할 파일이 없습니다.</li>}
+          </ul>
+        </section>
+
+        <section className="admin-work-queue-group" aria-labelledby="queue-reupload-title">
+          <div className="admin-work-queue-group-heading">
+            <div>
+              <h3 id="queue-reupload-title">3. 재업로드 파일 검수</h3>
+              <p>고객이 수정 파일을 올렸고 관리자 확인을 기다리는 요청입니다.</p>
+            </div>
+            <a className="button secondary button-small" href="/admin?tab=reupload">재업로드 탭</a>
+          </div>
+          <ul className="admin-work-queue-list">
+            {queue.reuploadReviewRequests.length ? queue.reuploadReviewRequests.map((request) => (
+              <li key={request.id}>
+                <div>
+                  <strong>{request.new_file.original_filename}</strong>
+                  <span>
+                    {request.order_id ?? "주문번호 미연결"} · {getFileStatusLabel(request.new_file.status)} · {formatAdminDateTime(request.updated_at)}
+                  </span>
+                </div>
+                {request.new_file_id ? (
+                  <a className="button secondary button-small" href={`/admin?tab=files&file_id=${encodeURIComponent(request.new_file_id)}`}>
+                    새 파일 검수
+                  </a>
+                ) : null}
+              </li>
+            )) : <li className="admin-work-queue-empty">검수 대기 중인 재업로드 파일이 없습니다.</li>}
+          </ul>
+        </section>
+
+        <section className="admin-work-queue-group" aria-labelledby="queue-webhook-title">
+          <div className="admin-work-queue-group-heading">
+            <div>
+              <h3 id="queue-webhook-title">4. Webhook 확인 필요</h3>
+              <p>정상 자동 연결 외 상태로 남은 최근 주문 이벤트입니다.</p>
+            </div>
+            <a className="button secondary button-small" href="/admin?tab=logs">로그 탭</a>
+          </div>
+          <ul className="admin-work-queue-list">
+            {queue.webhookAttentionEvents.length ? queue.webhookAttentionEvents.map((event) => (
+              <li key={event.id}>
+                <div>
+                  <strong>{getWebhookStatusLabel(event.processed_status)}</strong>
+                  <span>{event.order_id ?? "주문번호 없음"} · {formatAdminDateTime(event.received_at)}</span>
+                </div>
+                <a className="button secondary button-small" href={`/admin?tab=logs&webhook_status=${encodeURIComponent(event.processed_status)}`}>
+                  로그 확인
+                </a>
+              </li>
+            )) : <li className="admin-work-queue-empty">확인 필요한 최근 Webhook이 없습니다.</li>}
+          </ul>
+        </section>
+      </div>
+    </section>
+  );
+}
+
 function getOrderLinkMessage(status: string) {
   switch (status) {
     case "success":
@@ -571,6 +741,8 @@ function getOrderLinkMessage(status: string) {
       return "file_id를 확인할 수 없습니다.";
     case "file_not_found":
       return "해당 file_id의 업로드 파일을 찾지 못했습니다.";
+    case "different_order":
+      return "이미 다른 주문번호에 연결된 파일이라 변경하지 않았습니다. Cafe24 주문상세를 다시 확인해 주세요.";
     case "failed":
       return "주문번호 연결에 실패했습니다.";
     default:
@@ -847,6 +1019,7 @@ async function lookupCafe24OrderById(rawOrderId: string, shouldSearch: boolean):
 }
 
 async function getAdminData(
+  activeTab: AdminTab,
   fileIdQuery: string,
   shouldSearchFileId: boolean,
   orderIdQuery: string,
@@ -875,58 +1048,136 @@ async function getAdminData(
   let adminDownloadLogs: AdminDownloadLogRecord[] = [];
   let cafe24WebhookEvents: Cafe24WebhookEventRecord[] = [];
   let proofConfirmationLogs: ProofConfirmationRecord[] = [];
+  let todayQueue: AdminTodayQueueState = {
+    unlinkedFiles: [],
+    pendingReviewFiles: [],
+    reuploadReviewRequests: [],
+    webhookAttentionEvents: [],
+    warnings: []
+  };
   let dataError = null;
-  const [fileLookup, orderLookup] = await Promise.all([
-    lookupFileById(fileIdQuery, shouldSearchFileId),
-    lookupFilesByOrderId(orderIdQuery, shouldSearchOrderId)
-  ]);
-  const cafe24OrderLookup = await lookupCafe24OrderById(cafe24OrderIdQuery, shouldSearchCafe24OrderId);
+  let fileLookup = await lookupFileById("", false);
+  let orderLookup = await lookupFilesByOrderId("", false);
+  let cafe24OrderLookup = await lookupCafe24OrderById("", false);
 
-  try {
-    installation = await getCafe24Installation();
-  } catch (error) {
-    dataError = error instanceof Error ? error.message : "Failed to load admin data.";
+  if (activeTab === "files") {
+    [fileLookup, orderLookup, cafe24OrderLookup] = await Promise.all([
+      lookupFileById(fileIdQuery, shouldSearchFileId),
+      lookupFilesByOrderId(orderIdQuery, shouldSearchOrderId),
+      lookupCafe24OrderById(cafe24OrderIdQuery, shouldSearchCafe24OrderId)
+    ]);
   }
 
-  try {
-    files = await listRecentFiles(20, {
-      status: recentStatusFilter,
-      orderLink: recentOrderLinkFilter
-    });
-  } catch (error) {
-    dataError = dataError ?? (error instanceof Error ? error.message : "Failed to load recent files.");
+  if (activeTab === "reupload") {
+    fileLookup = await lookupFileById(fileIdQuery, shouldSearchFileId);
   }
 
-  try {
-    adminDownloadLogs = await listAdminDownloadLogs({
-      fileId: downloadFileIdFilter,
-      orderId: downloadOrderIdFilter,
-      result: downloadResultFilter,
-      startDate: downloadStartDateFilter,
-      endDate: downloadEndDateFilter,
-      limit: 50
-    });
-  } catch (error) {
-    dataError = dataError ?? (error instanceof Error ? error.message : "Failed to load download logs.");
+  if (activeTab === "settings") {
+    try {
+      [installation, cafe24OrderLookup] = await Promise.all([
+        getCafe24Installation(),
+        lookupCafe24OrderById(cafe24OrderIdQuery, shouldSearchCafe24OrderId)
+      ]);
+    } catch (error) {
+      dataError = error instanceof Error ? error.message : "Failed to load admin data.";
+    }
   }
 
-  try {
-    cafe24WebhookEvents = await listRecentCafe24WebhookEvents(10, webhookStatusFilter);
-  } catch (error) {
-    dataError = dataError ?? (error instanceof Error ? error.message : "Failed to load Cafe24 webhook events.");
+  if (activeTab === "today") {
+    const [filesResult, unlinkedResult, pendingResult, reuploadResult, webhookResult] = await Promise.allSettled([
+      listRecentFiles(20, {
+        status: recentStatusFilter,
+        orderLink: recentOrderLinkFilter
+      }),
+      listRecentFiles(10, { orderLink: "unlinked" }),
+      listRecentFiles(10, { status: "uploaded_pending", orderLink: "linked" }),
+      listRecentReuploadReviewQueue(10),
+      listRecentCafe24WebhookAttentionEvents(10)
+    ]);
+
+    if (filesResult.status === "fulfilled") {
+      files = filesResult.value;
+    } else {
+      dataError = filesResult.reason instanceof Error ? filesResult.reason.message : "Failed to load recent files.";
+    }
+
+    if (unlinkedResult.status === "fulfilled") {
+      todayQueue.unlinkedFiles = unlinkedResult.value.filter(isUnlinkedFileWorkItem);
+    } else {
+      todayQueue.warnings.push("주문번호 미연결 파일");
+    }
+
+    if (pendingResult.status === "fulfilled") {
+      todayQueue.pendingReviewFiles = pendingResult.value.filter(isPendingReviewFileWorkItem);
+    } else {
+      todayQueue.warnings.push("확인 전 파일");
+    }
+
+    if (reuploadResult.status === "fulfilled") {
+      todayQueue.reuploadReviewRequests = reuploadResult.value.filter((request) =>
+        isReuploadReadyForReview({
+          status: request.status,
+          new_file_id: request.new_file_id,
+          new_file_status: request.new_file.status
+        })
+      );
+    } else {
+      todayQueue.warnings.push("재업로드 검수 대기");
+    }
+
+    if (webhookResult.status === "fulfilled") {
+      todayQueue.webhookAttentionEvents = webhookResult.value.filter((event) =>
+        isWebhookAttentionStatus(event.processed_status)
+      );
+    } else {
+      todayQueue.warnings.push("Webhook 확인 필요");
+    }
   }
 
-  try {
-    proofConfirmationLogs = await listProofConfirmations({
-      proofStatus: proofStatusFilter,
-      fileId: proofFileIdFilter,
-      orderId: proofOrderIdFilter,
-      startDate: proofStartDateFilter,
-      endDate: proofEndDateFilter,
-      limit: 10
-    });
-  } catch (error) {
-    dataError = dataError ?? (error instanceof Error ? error.message : "Failed to load proof confirmation logs.");
+  if (activeTab === "logs") {
+    const [downloadLogsResult, webhookEventsResult, proofLogsResult] = await Promise.allSettled([
+      listAdminDownloadLogs({
+        fileId: downloadFileIdFilter,
+        orderId: downloadOrderIdFilter,
+        result: downloadResultFilter,
+        startDate: downloadStartDateFilter,
+        endDate: downloadEndDateFilter,
+        limit: 50
+      }),
+      listRecentCafe24WebhookEvents(10, webhookStatusFilter),
+      listProofConfirmations({
+        proofStatus: proofStatusFilter,
+        fileId: proofFileIdFilter,
+        orderId: proofOrderIdFilter,
+        startDate: proofStartDateFilter,
+        endDate: proofEndDateFilter,
+        limit: 10
+      })
+    ]);
+
+    if (downloadLogsResult.status === "fulfilled") {
+      adminDownloadLogs = downloadLogsResult.value;
+    } else {
+      dataError = downloadLogsResult.reason instanceof Error
+        ? downloadLogsResult.reason.message
+        : "Failed to load download logs.";
+    }
+
+    if (webhookEventsResult.status === "fulfilled") {
+      cafe24WebhookEvents = webhookEventsResult.value;
+    } else {
+      dataError = dataError ?? (webhookEventsResult.reason instanceof Error
+        ? webhookEventsResult.reason.message
+        : "Failed to load Cafe24 webhook events.");
+    }
+
+    if (proofLogsResult.status === "fulfilled") {
+      proofConfirmationLogs = proofLogsResult.value;
+    } else {
+      dataError = dataError ?? (proofLogsResult.reason instanceof Error
+        ? proofLogsResult.reason.message
+        : "Failed to load proof confirmation logs.");
+    }
   }
 
   return {
@@ -938,6 +1189,7 @@ async function getAdminData(
     adminDownloadLogs,
     cafe24WebhookEvents,
     proofConfirmationLogs,
+    todayQueue,
     dataError,
     fileLookup,
     orderLookup,
@@ -1050,7 +1302,7 @@ function ReuploadWorkflowPanel({
     <section className="panel panel-pad" id="reupload-workflow">
       <h2>재업로드 처리</h2>
       <p className="lead">
-        문제가 있는 파일의 file_id를 검색한 뒤 고객 안내문, 재업로드 링크 생성, 재업로드 이력을 한 곳에서 확인합니다.
+        문제가 있는 파일의 file_id를 검색한 뒤 요청 생성, 고객 안내, 재업로드 이력을 한 곳에서 확인합니다.
       </p>
       <form className="form" method="get" style={{ marginTop: 16 }}>
         <input name="tab" type="hidden" value="reupload" />
@@ -1081,12 +1333,6 @@ function ReuploadWorkflowPanel({
             <FileLookupField label="updated_at" value={file.updated_at} />
           </div>
           <ReuploadSourceNotice requests={lookup.reuploadSourceRequests} />
-          <ReuploadRequestMessagePanel
-            currentStatus={file.status}
-            fileId={file.id}
-            orderId={file.order_id}
-            originalFilename={file.original_filename}
-          />
           <ReuploadLinkCreatePanel
             fileId={file.id}
             initialRequests={lookup.reuploadRequests}
@@ -1100,7 +1346,7 @@ function ReuploadWorkflowPanel({
         </div>
       ) : (
         <div className="notice" style={{ marginTop: 16 }}>
-          file_id를 검색하면 재업로드 요청 안내문과 재업로드 링크 생성 영역이 표시됩니다.
+          file_id를 검색하면 통합 재업로드 요청 생성 영역이 표시됩니다.
         </div>
       )}
     </section>
@@ -1839,24 +2085,10 @@ function Cafe24OrderApiLookupPanel({
 }) {
   return (
     <section className="panel panel-pad" id="cafe24-order-test">
-      <h2>Cafe24 주문 조회 테스트</h2>
+      <h2>Cafe24 주문 연동 확인</h2>
       <p className="lead">
-        Cafe24 Admin API로 주문 상세를 조회해 상품 옵션 안의 업로드 파일 ID가 API 응답에 포함되는지 확인합니다.
-        이 기능은 조회 테스트 전용이며 Supabase files.order_id를 자동 업데이트하지 않습니다.
+        통합 검색에서 입력한 주문번호를 Cafe24 Admin API로 조회해 주문 옵션의 업로드 파일 ID와 저장 파일을 비교합니다.
       </p>
-      <form className="form" method="get" style={{ marginTop: 16 }}>
-        <input name="tab" type="hidden" value="files" />
-        <div className="field">
-          <label htmlFor="cafe24_order_id_lookup">Cafe24 주문번호</label>
-          <input
-            id="cafe24_order_id_lookup"
-            name="cafe24_order_id"
-            placeholder="Cafe24 주문번호를 입력하세요. 예: 20260701-0000017"
-            defaultValue={lookup.query}
-          />
-        </div>
-        <button className="button" type="submit">Cafe24 주문 조회</button>
-      </form>
 
       {lookup.message ? (
         <div className="notice" style={{ marginTop: 16 }}>{lookup.message}</div>
@@ -1928,21 +2160,46 @@ function Cafe24OrderApiLookupPanel({
             </div>
           </div>
 
-          <div className="notice" style={{ marginTop: 16 }}>
-            <h3 style={{ marginTop: 0 }}>응답 구조 요약</h3>
-            <p>order detail top-level keys: {lookup.order.responseShape.detailTopLevelKeys.join(", ") || "-"}</p>
-            <p>order item response top-level keys: {lookup.order.responseShape.itemResponseTopLevelKeys.join(", ") || "-"}</p>
-            <p>order object: {lookup.order.responseShape.hasOrderObject ? "있음" : "없음"}</p>
-            <p>orders array: {lookup.order.responseShape.hasOrdersArray ? "있음" : "없음"}</p>
-            <p>order detail item count: {lookup.order.responseShape.detailItemCount}</p>
-            <p>order item array: {lookup.order.responseShape.itemArrayExists ? "있음" : "없음"}</p>
-            <p>order item count: {lookup.order.responseShape.itemCount}</p>
-            <p>item lookup status: {lookup.order.responseShape.itemLookupStatus}</p>
-            <p style={{ marginBottom: 0 }}>
-              item lookup error: {lookup.order.responseShape.itemLookupErrorMessage ?? "-"}
-            </p>
-          </div>
         </div>
+      ) : null}
+    </section>
+  );
+}
+
+function Cafe24ApiDiagnosticsPanel({ lookup }: { lookup: Cafe24OrderApiLookupState }) {
+  return (
+    <section className="panel panel-pad" id="cafe24-api-diagnostics">
+      <h2>Cafe24 API 진단</h2>
+      <p className="lead">운영 처리 화면과 분리한 개발·연동 점검용 정보입니다.</p>
+      <form className="form" method="get" style={{ marginTop: 16 }}>
+        <input name="tab" type="hidden" value="settings" />
+        <div className="field">
+          <label htmlFor="cafe24_diagnostics_order_id">Cafe24 주문번호</label>
+          <input
+            id="cafe24_diagnostics_order_id"
+            name="cafe24_order_id"
+            placeholder="예: 20260701-0000017"
+            defaultValue={lookup.query}
+          />
+        </div>
+        <button className="button secondary" type="submit">진단 조회</button>
+      </form>
+      {lookup.message ? <div className="notice" style={{ marginTop: 16 }}>{lookup.message}</div> : null}
+      {lookup.order ? (
+        <details className="notice" open style={{ marginTop: 16 }}>
+          <summary>응답 구조 요약</summary>
+          <p>order detail top-level keys: {lookup.order.responseShape.detailTopLevelKeys.join(", ") || "-"}</p>
+          <p>order item response top-level keys: {lookup.order.responseShape.itemResponseTopLevelKeys.join(", ") || "-"}</p>
+          <p>order object: {lookup.order.responseShape.hasOrderObject ? "있음" : "없음"}</p>
+          <p>orders array: {lookup.order.responseShape.hasOrdersArray ? "있음" : "없음"}</p>
+          <p>order detail item count: {lookup.order.responseShape.detailItemCount}</p>
+          <p>order item array: {lookup.order.responseShape.itemArrayExists ? "있음" : "없음"}</p>
+          <p>order item count: {lookup.order.responseShape.itemCount}</p>
+          <p>item lookup status: {lookup.order.responseShape.itemLookupStatus}</p>
+          <p style={{ marginBottom: 0 }}>
+            item lookup error: {lookup.order.responseShape.itemLookupErrorMessage ?? "-"}
+          </p>
+        </details>
       ) : null}
     </section>
   );
@@ -2009,7 +2266,6 @@ function OrderFileResultCard({
         <FileLookupField label="file_size" value={file.file_size} />
         <FileLookupField label="mime_type" value={file.mime_type} />
         <FileLookupField label="status" value={file.status} />
-        <FileLookupField label="내부 저장 정보" value={getInternalStorageDisplay(file)} emptyText="저장 정보 없음" />
         <FileLookupField label="created_at" value={file.created_at} />
         <FileLookupField label="updated_at" value={file.updated_at} />
       </div>
@@ -2086,9 +2342,12 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     return <AdminLoginPage authMessage={authMessage} />;
   }
 
-  const fileIdQuery = readParam(searchParams, "file_id");
-  const orderIdQuery = readParam(searchParams, "order_id");
-  const cafe24OrderIdQuery = readParam(searchParams, "cafe24_order_id");
+  const unifiedLookupQuery = readParam(searchParams, "lookup").trim();
+  const unifiedFileIdQuery = unifiedLookupQuery && isFileIdLookup(unifiedLookupQuery) ? unifiedLookupQuery : "";
+  const unifiedOrderIdQuery = unifiedLookupQuery && !unifiedFileIdQuery ? unifiedLookupQuery : "";
+  const fileIdQuery = readParam(searchParams, "file_id") || unifiedFileIdQuery;
+  const orderIdQuery = readParam(searchParams, "order_id") || unifiedOrderIdQuery;
+  const cafe24OrderIdQuery = readParam(searchParams, "cafe24_order_id") || unifiedOrderIdQuery;
   const recentStatusFilter = getRecentStatusFilter(readParam(searchParams, "recent_status"));
   const recentOrderLinkFilter = getRecentOrderLinkFilter(readParam(searchParams, "recent_order_link"));
   const downloadFileIdFilter = readParam(searchParams, "download_file_id").trim();
@@ -2140,12 +2399,13 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
   const cafe24AutoLinkMessage = getCafe24AutoLinkMessage(readParam(searchParams, "cafe24_link"));
   const proofActionMessage = getProofActionMessage(readParam(searchParams, "proof_action"));
   const data = await getAdminData(
+    activeTab,
     fileIdQuery,
-    hasFileIdParam(searchParams),
+    hasFileIdParam(searchParams) || Boolean(unifiedFileIdQuery),
     orderIdQuery,
-    hasOrderIdParam(searchParams),
+    hasOrderIdParam(searchParams) || Boolean(unifiedOrderIdQuery),
     cafe24OrderIdQuery,
-    hasCafe24OrderIdParam(searchParams),
+    hasCafe24OrderIdParam(searchParams) || Boolean(unifiedOrderIdQuery),
     recentStatusFilter,
     recentOrderLinkFilter,
     downloadFileIdFilter,
@@ -2178,7 +2438,11 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
 
       {data.dataError ? <div className="notice">{data.dataError}</div> : null}
 
-      <AdminWorkflowTabs activeTab={activeTab} preservedQuery={preservedQuery} />
+      <AdminWorkflowTabs
+        activeTab={activeTab}
+        fileId={fileIdQuery}
+        orderId={orderIdQuery || cafe24OrderIdQuery}
+      />
 
       {activeTab === "settings" ? (
         <>
@@ -2219,33 +2483,46 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
           <div className="card"><span>scopes</span><strong>{data.installation?.scopes ?? "-"}</strong></div>
         </div>
       </section>
+      <Cafe24ApiDiagnosticsPanel lookup={data.cafe24OrderLookup} />
         </>
       ) : null}
 
-      {activeTab === "today" ? <AdminTodayGuide preservedQuery={preservedQuery} /> : null}
+      {activeTab === "today" ? (
+        <>
+          <AdminTodayGuide />
+          <AdminTodayWorkQueue queue={data.todayQueue} />
+        </>
+      ) : null}
 
       {activeTab === "files" ? (
         <>
-      <Cafe24OrderApiLookupPanel lookup={data.cafe24OrderLookup} linkMessage={cafe24AutoLinkMessage} />
-
-      <section className="panel panel-pad" id="find-files-by-order">
-        <h2>주문번호로 업로드 파일 찾기</h2>
+      <section className="panel panel-pad" id="admin-unified-file-search">
+        <h2>주문·파일 통합 검색</h2>
         <p className="lead">
-          Cafe24 주문번호를 입력하면 해당 주문번호에 연결된 업로드 파일 목록을 확인할 수 있습니다.
+          Cafe24 주문번호 또는 전체 file_id를 입력하면 연결된 주문, 저장 파일, 처리 이력을 함께 확인합니다.
         </p>
         <form className="form" method="get" style={{ marginTop: 16 }}>
           <input name="tab" type="hidden" value="files" />
           <div className="field">
-            <label htmlFor="order_id_lookup">Cafe24 주문번호</label>
+            <label htmlFor="admin_lookup">Cafe24 주문번호 또는 file_id</label>
             <input
-              id="order_id_lookup"
-              name="order_id"
-              placeholder="Cafe24 주문번호를 입력하세요. 예: 20260630-0000029"
-              defaultValue={data.orderLookup.query}
+              id="admin_lookup"
+              name="lookup"
+              placeholder="예: 20260701-0000017 또는 전체 UUID"
+              defaultValue={unifiedLookupQuery || fileIdQuery || orderIdQuery || cafe24OrderIdQuery}
             />
           </div>
-          <button className="button" type="submit">주문번호로 파일 찾기</button>
+          <button className="button" type="submit">통합 검색</button>
         </form>
+      </section>
+
+      <Cafe24OrderApiLookupPanel lookup={data.cafe24OrderLookup} linkMessage={cafe24AutoLinkMessage} />
+
+      <section className="panel panel-pad" id="find-files-by-order">
+        <h2>주문번호에 연결된 파일</h2>
+        <p className="lead">
+          통합 검색한 주문번호에 연결된 업로드 파일 목록입니다.
+        </p>
 
         {data.orderLookup.message ? (
           <div className="notice" style={{ marginTop: 16 }}>{data.orderLookup.message}</div>
@@ -2278,23 +2555,10 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
       </section>
 
       <section className="panel panel-pad" id="find-file-by-id">
-        <h2>파일 ID로 업로드 파일 찾기</h2>
+        <h2>파일 상세 처리</h2>
         <p className="lead">
-          Cafe24 관리자 주문상세에 표시된 “업로드 파일 ID”를 입력하면 저장된 파일 정보를 확인할 수 있습니다.
+          통합 검색한 file_id의 파일 정보와 상태, 재업로드, 교정확인, 다운로드 이력을 처리합니다.
         </p>
-        <form className="form" method="get" style={{ marginTop: 16 }}>
-          <input name="tab" type="hidden" value="files" />
-          <div className="field">
-            <label htmlFor="file_id">file_id</label>
-            <input
-              id="file_id"
-              name="file_id"
-              placeholder="Cafe24 주문상세의 업로드 파일 ID를 입력하세요"
-              defaultValue={data.fileLookup.query}
-            />
-          </div>
-          <button className="button" type="submit">파일 찾기</button>
-        </form>
 
         {data.fileLookup.message ? (
           <div className="notice" style={{ marginTop: 16 }}>{data.fileLookup.message}</div>
@@ -2305,22 +2569,13 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
             <div className="grid grid-3">
               <FileLookupField label="file_id" value={data.fileLookup.file.id} />
               <FileLookupField label="original_filename" value={data.fileLookup.file.original_filename} />
-              <FileLookupField label="mall_id" value={data.fileLookup.file.mall_id} />
-              <FileLookupField label="shop_no" value={data.fileLookup.file.shop_no} />
               <FileLookupField label="product_no" value={data.fileLookup.file.product_no} />
               <FileLookupField label="variant_code" value={data.fileLookup.file.variant_code} />
               <FileLookupField label="customer_type" value={data.fileLookup.file.customer_type} />
               <FileLookupField label="file_size" value={data.fileLookup.file.file_size} />
               <FileLookupField label="mime_type" value={data.fileLookup.file.mime_type} />
-              <FileLookupField label="storage_provider" value={data.fileLookup.file.storage_provider} />
-              <FileLookupField
-                label="내부 저장 정보"
-                value={getInternalStorageDisplay(data.fileLookup.file)}
-                emptyText="저장 정보 없음"
-              />
               <FileLookupField label="status" value={data.fileLookup.file.status} />
               <FileLookupField label="order_id" value={data.fileLookup.file.order_id} emptyText="미연결" />
-              <FileLookupField label="inquiry_id" value={data.fileLookup.file.inquiry_id} emptyText="미연결" />
               <FileLookupField label="created_at" value={data.fileLookup.file.created_at} />
               <FileLookupField label="updated_at" value={data.fileLookup.file.updated_at} />
             </div>
@@ -2334,12 +2589,6 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
             <OrderLinkPanel file={data.fileLookup.file} message={orderLinkMessage} />
             <OrderLinkLogPanel logs={data.fileLookup.orderLinkLogs} />
             <AdminFileStatusForm fileId={data.fileLookup.file.id} currentStatus={data.fileLookup.file.status} />
-            <ReuploadRequestMessagePanel
-              currentStatus={data.fileLookup.file.status}
-              fileId={data.fileLookup.file.id}
-              orderId={data.fileLookup.file.order_id}
-              originalFilename={data.fileLookup.file.original_filename}
-            />
             <ReuploadLinkCreatePanel
               fileId={data.fileLookup.file.id}
               initialRequests={data.fileLookup.reuploadRequests}

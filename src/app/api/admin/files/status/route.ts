@@ -1,13 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ADMIN_SESSION_COOKIE_NAME, verifyAdminSessionToken } from "@/lib/admin/auth";
-import { createFileReviewLog } from "@/lib/files/file-review-log-service";
 import { isKnownFileStatus } from "@/lib/files/file-status";
-import { updateFileStatus } from "@/lib/files/file-service";
+import {
+  FileStatusConcurrentChangeError,
+  FileStatusTransitionError,
+  updateFileStatus
+} from "@/lib/files/file-service";
 
 export const dynamic = "force-dynamic";
 
 type StatusRequestBody = {
   file_id?: unknown;
+  expected_status?: unknown;
   status?: unknown;
   memo?: unknown;
 };
@@ -44,6 +48,7 @@ export async function POST(request: NextRequest) {
   }
 
   const fileId = typeof body.file_id === "string" ? body.file_id.trim() : "";
+  const expectedStatus = typeof body.expected_status === "string" ? body.expected_status.trim() : "";
   const status = typeof body.status === "string" ? body.status.trim() : "";
   const memo = typeof body.memo === "string" ? body.memo.trim() : "";
 
@@ -55,20 +60,19 @@ export async function POST(request: NextRequest) {
     return jsonError("status is required.", 400);
   }
 
-  if (!isKnownFileStatus(status)) {
+  if (!expectedStatus) {
+    return jsonError("현재 상태를 확인할 수 없습니다. 화면을 새로고침해 주세요.", 400);
+  }
+
+  if (!isKnownFileStatus(expectedStatus) || !isKnownFileStatus(status)) {
     return jsonError("Unsupported file status.", 400);
   }
 
   try {
     const result = await updateFileStatus({
       fileId,
-      status
-    });
-
-    const reviewLogResult = await createFileReviewLog({
-      fileId,
-      previousStatus: result.previousStatus,
-      newStatus: status,
+      expectedStatus,
+      status,
       memo,
       adminUser: "admin",
       ipAddress: getClientIp(request),
@@ -82,10 +86,19 @@ export async function POST(request: NextRequest) {
         status: result.file.status,
         updated_at: result.file.updated_at
       },
-      review_log_saved: reviewLogResult.saved,
-      review_log_error_message: reviewLogResult.errorMessage
+      review_log_saved: true,
+      review_log_error_message: null,
+      changed: result.changed
     });
   } catch (error) {
+    if (error instanceof FileStatusTransitionError) {
+      return jsonError("현재 상태에서는 선택한 상태로 변경할 수 없습니다. 화면을 새로고침해 주세요.", 409);
+    }
+
+    if (error instanceof FileStatusConcurrentChangeError) {
+      return jsonError("다른 작업에서 파일 상태가 먼저 변경되었습니다. 화면을 새로고침해 주세요.", 409);
+    }
+
     const message = error instanceof Error ? error.message : "Failed to update file status.";
     const statusCode = message === "Uploaded file was not found." ? 404 : 500;
     return jsonError(message, statusCode);

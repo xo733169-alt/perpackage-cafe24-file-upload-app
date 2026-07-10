@@ -35,6 +35,11 @@ export type Cafe24WebhookProcessedStatus =
 
 export type Cafe24WebhookStatusFilter = Cafe24WebhookProcessedStatus | "all";
 
+export type Cafe24WebhookAttentionRecord = Pick<
+  Cafe24WebhookEventRecord,
+  "id" | "event_type" | "order_id" | "received_at" | "processed_status"
+>;
+
 export type Cafe24WebhookPayloadSummary = {
   topLevelKeys: string[];
   mallId: string | null;
@@ -316,4 +321,27 @@ export async function listRecentCafe24WebhookEvents(
   }
 
   return (data ?? []) as Cafe24WebhookEventRecord[];
+}
+
+export async function listRecentCafe24WebhookAttentionEvents(
+  limit = 10
+): Promise<Cafe24WebhookAttentionRecord[]> {
+  const safeLimit = Math.max(1, Math.min(limit, 50));
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("cafe24_webhook_events")
+    .select("id, event_type, order_id, received_at, processed_status")
+    .not("processed_status", "in", '("auto_linked","already_linked")')
+    .order("received_at", { ascending: false })
+    .limit(safeLimit);
+
+  if (error) {
+    console.error("cafe24_webhook_attention_events_load_failed", {
+      code: error.code ?? null,
+      message: error.message ?? null
+    });
+    throw new Error("Failed to load Cafe24 webhook attention events.");
+  }
+
+  return (data ?? []) as Cafe24WebhookAttentionRecord[];
 }

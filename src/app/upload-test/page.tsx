@@ -1,6 +1,12 @@
 import { UploadTestForm } from "@/components/upload-test-form";
+import { isAdminAuthenticated } from "@/lib/admin/auth";
+import { redirect } from "next/navigation";
 
 export default function UploadTestPage() {
+  if (process.env.NODE_ENV === "production" && !isAdminAuthenticated()) {
+    redirect("/admin");
+  }
+
   return (
     <main className="grid" style={{ gap: 22 }}>
       <section className="hero">

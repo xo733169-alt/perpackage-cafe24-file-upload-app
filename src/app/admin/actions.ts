@@ -9,8 +9,11 @@ import {
   setAdminSessionCookie,
   verifyAdminPassword
 } from "@/lib/admin/auth";
-import { getFileById, updateFileOrderId } from "@/lib/files/file-service";
-import { createFileOrderLinkLog } from "@/lib/files/order-link-log-service";
+import {
+  FileOrderLinkConflictError,
+  getFileById,
+  updateFileOrderId
+} from "@/lib/files/file-service";
 import {
   createProofConfirmationRequest,
   updateProofConfirmationStatus,
@@ -50,46 +53,43 @@ export async function logoutAdminAction() {
 export async function linkFileOrderIdAction(formData: FormData) {
   const fileId = String(formData.get("file_id") ?? "").trim();
   const orderId = String(formData.get("order_id") ?? "").trim();
-  const fileIdParam = fileId ? `?file_id=${encodeURIComponent(fileId)}` : "";
+  const fileIdParam = fileId
+    ? `?tab=files&file_id=${encodeURIComponent(fileId)}`
+    : "?tab=files";
 
   if (!isAdminAuthenticated()) {
     redirect("/admin?auth=failed");
   }
 
   if (!fileId) {
-    redirect("/admin?order_link=missing_file_id");
+    redirect("/admin?tab=files&order_link=missing_file_id");
   }
 
   if (!orderId) {
-    redirect(`/admin?file_id=${encodeURIComponent(fileId)}&order_link=empty_order_id`);
+    redirect(`/admin?tab=files&file_id=${encodeURIComponent(fileId)}&order_link=empty_order_id`);
   }
 
   try {
-    const previousFile = await getFileById(fileId);
-    const previousOrderId = previousFile?.order_id?.trim() || null;
-    await updateFileOrderId({ fileId, orderId });
-
-    if (previousOrderId !== orderId) {
-      const context = getAdminRequestLogContext();
-      await createFileOrderLinkLog({
-        fileId,
-        previousOrderId,
-        newOrderId: orderId,
-        linkSource: "manual",
-        adminUser: "admin",
-        memo: "관리자 file_id 검색 화면에서 주문번호 수동 연결",
-        ipAddress: context.ipAddress,
-        userAgent: context.userAgent
-      });
-    }
+    const context = getAdminRequestLogContext();
+    await updateFileOrderId({
+      fileId,
+      orderId,
+      linkSource: "manual",
+      adminUser: "admin",
+      memo: "관리자 file_id 검색 화면에서 주문번호 수동 연결",
+      ipAddress: context.ipAddress,
+      userAgent: context.userAgent
+    });
   } catch (error) {
-    const reason = error instanceof Error && error.message === "Uploaded file was not found."
-      ? "file_not_found"
-      : "failed";
+    const reason = error instanceof FileOrderLinkConflictError
+      ? "different_order"
+      : error instanceof Error && error.message === "Uploaded file was not found."
+        ? "file_not_found"
+        : "failed";
     redirect(`${fileIdParam}&order_link=${reason}`);
   }
 
-  redirect(`/admin?file_id=${encodeURIComponent(fileId)}&order_link=success`);
+  redirect(`/admin?tab=files&file_id=${encodeURIComponent(fileId)}&order_link=success`);
 }
 
 export async function linkCafe24LookupFileOrderIdAction(formData: FormData) {
@@ -97,6 +97,7 @@ export async function linkCafe24LookupFileOrderIdAction(formData: FormData) {
   const orderId = String(formData.get("order_id") ?? "").trim();
   const redirectToCafe24Lookup = (status: string) => {
     const params = new URLSearchParams();
+    params.set("tab", "files");
     if (orderId) {
       params.set("cafe24_order_id", orderId);
     }
@@ -129,18 +130,24 @@ export async function linkCafe24LookupFileOrderIdAction(formData: FormData) {
       } else if (currentOrderId && currentOrderId !== orderId) {
         linkStatus = "different_order";
       } else {
-        await updateFileOrderId({ fileId, orderId });
-        const context = getAdminRequestLogContext();
-        await createFileOrderLinkLog({
-          fileId,
-          previousOrderId: null,
-          newOrderId: orderId,
-          linkSource: "cafe24_order_lookup",
-          adminUser: "admin",
-          memo: "Cafe24 주문 조회 결과에서 업로드 파일 ID 확인 후 주문번호 연결",
-          ipAddress: context.ipAddress,
-          userAgent: context.userAgent
-        });
+        try {
+          const context = getAdminRequestLogContext();
+          await updateFileOrderId({
+            fileId,
+            orderId,
+            linkSource: "cafe24_order_lookup",
+            adminUser: "admin",
+            memo: "Cafe24 주문 조회 결과에서 업로드 파일 ID 확인 후 주문번호 연결",
+            ipAddress: context.ipAddress,
+            userAgent: context.userAgent
+          });
+        } catch (error) {
+          if (error instanceof FileOrderLinkConflictError) {
+            linkStatus = "different_order";
+          } else {
+            throw error;
+          }
+        }
       }
     }
   } catch (error) {
@@ -175,6 +182,7 @@ function parseSelectedProofItems(value: FormDataEntryValue | null) {
 
 function redirectToFileProofResult(fileId: string, status: string) {
   const params = new URLSearchParams();
+  params.set("tab", "files");
   if (fileId) {
     params.set("file_id", fileId);
   }
