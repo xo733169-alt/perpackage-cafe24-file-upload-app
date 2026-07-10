@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, type ChangeEvent, type DragEvent, type FormEvent, type KeyboardEvent } from "react";
+import { inspectZipArchive, ZipInspectionError } from "@/lib/files/zip-archive-inspection";
 
 type ReuploadCustomerUploadFormProps = {
   token?: string;
@@ -50,10 +51,22 @@ const blockedExtensions = new Set([
   "dll"
 ]);
 const maxFileSizeBytes = 100 * 1024 * 1024;
+const maxZipFileCount = 50;
+const maxZipTotalUncompressedBytes = 50 * 1024 * 1024;
+const zipAllowedExtensions = new Set([".ai", ".pdf", ".eps", ".jpg", ".jpeg", ".png"]);
+const zipBlockedExtensions = new Set(Array.from(blockedExtensions, (extension) => `.${extension}`));
 const fileInputAccept = ".ai,.pdf,.eps,.jpg,.jpeg,.png,.zip";
 const invalidFileTypeMessage =
   "업로드할 수 없는 파일 형식입니다. AI, PDF, EPS, JPG, PNG 또는 ZIP 파일만 업로드해 주세요.";
 const fileTooLargeMessage = "파일 용량이 너무 큽니다. 100MB 이하 파일만 업로드해 주세요.";
+const zipEntryErrorMessage =
+  "ZIP 파일 안에 업로드할 수 없는 파일이 포함되어 있습니다. AI, PDF, EPS, JPG, PNG 파일만 남긴 뒤 다시 압축해 업로드해 주세요.";
+const zipPathErrorMessage =
+  "ZIP 파일 안에 안전하지 않은 파일 경로가 포함되어 있습니다. 다시 압축해 업로드해 주세요.";
+const zipReadErrorMessage =
+  "ZIP 파일을 확인할 수 없습니다. 파일이 손상되었거나 비밀번호가 설정된 ZIP인지 확인해 주세요.";
+const zipLimitErrorMessage =
+  "ZIP 파일 안의 파일 수 또는 전체 용량이 너무 큽니다. 파일을 줄인 뒤 다시 업로드해 주세요.";
 
 function getExtension(filename: string) {
   const index = filename.lastIndexOf(".");
@@ -85,6 +98,36 @@ function validateFile(file: File) {
   return null;
 }
 
+async function validateSelectedFile(file: File) {
+  const metadataError = validateFile(file);
+  if (metadataError || getExtension(file.name) !== "zip") {
+    return metadataError;
+  }
+
+  try {
+    inspectZipArchive(new Uint8Array(await file.arrayBuffer()), {
+      allowedExtensions: zipAllowedExtensions,
+      blockedExtensions: zipBlockedExtensions,
+      maxFiles: maxZipFileCount,
+      maxTotalUncompressedBytes: maxZipTotalUncompressedBytes
+    });
+    return null;
+  } catch (error) {
+    if (!(error instanceof ZipInspectionError)) {
+      return zipReadErrorMessage;
+    }
+
+    const messages = {
+      entry: zipEntryErrorMessage,
+      limit: zipLimitErrorMessage,
+      path: zipPathErrorMessage,
+      read: zipReadErrorMessage
+    } satisfies Record<ZipInspectionError["code"], string>;
+
+    return messages[error.code];
+  }
+}
+
 function validateFileList(files: FileList | File[] | null) {
   if (!files || files.length === 0) {
     return "업로드할 파일을 선택해 주세요.";
@@ -107,6 +150,7 @@ function getUploadErrorMessage(error: unknown) {
 
 export function ReuploadCustomerUploadForm({ token, publicId }: ReuploadCustomerUploadFormProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const validationRunRef = useRef(0);
   const [file, setFile] = useState<File | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -114,6 +158,7 @@ export function ReuploadCustomerUploadForm({ token, publicId }: ReuploadCustomer
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [isValidating, setIsValidating] = useState(false);
 
   function resetInputValue() {
     if (fileInputRef.current) {
@@ -121,31 +166,60 @@ export function ReuploadCustomerUploadForm({ token, publicId }: ReuploadCustomer
     }
   }
 
-  function applySelectedFiles(files: FileList | File[] | null) {
+  async function applySelectedFiles(files: FileList | File[] | null) {
+    const validationRun = validationRunRef.current + 1;
+    validationRunRef.current = validationRun;
     const validationMessage = validateFileList(files);
     if (validationMessage) {
       setFile(null);
       setErrorMessage(validationMessage);
       setMessage(null);
+      setIsValidating(false);
       resetInputValue();
       return;
     }
 
     const selectedFile = files?.[0] ?? null;
+    if (!selectedFile) {
+      return;
+    }
+
+    setFile(null);
+    setErrorMessage(null);
+    setMessage(
+      getExtension(selectedFile.name) === "zip"
+        ? "ZIP 파일 안의 파일을 검사하고 있습니다."
+        : "파일 형식과 용량을 검사하고 있습니다."
+    );
+    setIsValidating(true);
+
+    const selectionError = await validateSelectedFile(selectedFile);
+    if (validationRunRef.current !== validationRun) {
+      return;
+    }
+
+    setIsValidating(false);
+    if (selectionError) {
+      setErrorMessage(selectionError);
+      setMessage(null);
+      resetInputValue();
+      return;
+    }
+
     setFile(selectedFile);
     setErrorMessage(null);
-    setMessage("선택한 파일을 확인했습니다. 업로드 버튼을 눌러 주세요.");
+    setMessage("파일 보안 검사를 통과했습니다. 업로드 버튼을 눌러 주세요.");
   }
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
-    applySelectedFiles(event.currentTarget.files);
+    void applySelectedFiles(Array.from(event.currentTarget.files ?? []));
   }
 
   function handleDrop(event: DragEvent<HTMLDivElement>) {
     event.preventDefault();
     event.stopPropagation();
     setIsDragging(false);
-    applySelectedFiles(Array.from(event.dataTransfer.files));
+    void applySelectedFiles(Array.from(event.dataTransfer.files));
   }
 
   function handleDragOver(event: DragEvent<HTMLDivElement>) {
@@ -168,7 +242,7 @@ export function ReuploadCustomerUploadForm({ token, publicId }: ReuploadCustomer
   }
 
   function openFileDialog() {
-    if (!isSubmitting) {
+    if (!isSubmitting && !isValidating) {
       fileInputRef.current?.click();
     }
   }
@@ -243,6 +317,8 @@ export function ReuploadCustomerUploadForm({ token, publicId }: ReuploadCustomer
       <div className="field">
         <label htmlFor="reupload_file">수정 파일 업로드</label>
         <div
+          aria-busy={isValidating}
+          aria-disabled={isSubmitting || isValidating}
           aria-label="수정 파일 업로드 영역"
           onClick={openFileDialog}
           onDragLeave={handleDragLeave}
@@ -255,7 +331,7 @@ export function ReuploadCustomerUploadForm({ token, publicId }: ReuploadCustomer
             background: isDragging ? "#f0f7ff" : "#f8fafc",
             border: isDragging ? "2px solid #2563eb" : "1px dashed #94a3b8",
             borderRadius: 10,
-            cursor: isSubmitting ? "not-allowed" : "pointer",
+            cursor: isSubmitting || isValidating ? "not-allowed" : "pointer",
             display: "grid",
             gap: 8,
             minHeight: 156,
@@ -265,7 +341,7 @@ export function ReuploadCustomerUploadForm({ token, publicId }: ReuploadCustomer
           tabIndex={0}
         >
           <strong style={{ color: "#0f172a", fontSize: 16 }}>
-            파일을 선택하거나 이곳에 끌어다 놓으세요
+            {isValidating ? "파일을 검사하고 있습니다..." : "파일을 선택하거나 이곳에 끌어다 놓으세요"}
           </strong>
           <span style={{ color: "#475569", fontSize: 14 }}>
             AI, PDF, EPS, JPG, PNG, ZIP 파일만 업로드할 수 있습니다.
@@ -287,6 +363,15 @@ export function ReuploadCustomerUploadForm({ token, publicId }: ReuploadCustomer
           type="file"
         />
       </div>
+      {errorMessage ? (
+        <div
+          className="notice"
+          role="alert"
+          style={{ background: "#fff5f3", borderColor: "#f0b8ae", color: "#b42318", margin: 0 }}
+        >
+          {errorMessage}
+        </div>
+      ) : null}
       {file ? (
         <div className="notice" style={{ margin: 0 }}>
           <strong>선택된 파일</strong>
@@ -300,11 +385,10 @@ export function ReuploadCustomerUploadForm({ token, publicId }: ReuploadCustomer
         <br />
         ZIP 안에는 AI, PDF, EPS, JPG, PNG 파일만 포함해 주세요.
       </div>
-      <button className="button" disabled={isSubmitting || !file} type="submit">
-        {isSubmitting ? "업로드 중..." : "수정 파일 업로드"}
+      <button className="button" disabled={isSubmitting || isValidating || !file} type="submit">
+        {isValidating ? "파일 검사 중..." : isSubmitting ? "업로드 중..." : "수정 파일 업로드"}
       </button>
       {message ? <p style={{ marginBottom: 0 }}>{message}</p> : null}
-      {errorMessage ? <p style={{ color: "#b42318", marginBottom: 0 }}>{errorMessage}</p> : null}
     </form>
   );
 }

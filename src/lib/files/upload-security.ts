@@ -1,3 +1,5 @@
+import { inspectZipArchive, ZipInspectionError } from "./zip-archive-inspection";
+
 const DEFAULT_UPLOAD_MAX_FILE_SIZE_MB = 10;
 const DEFAULT_UPLOAD_ZIP_MAX_FILES = 50;
 const DEFAULT_UPLOAD_ZIP_MAX_TOTAL_UNCOMPRESSED_MB = 50;
@@ -84,28 +86,6 @@ export function validateUploadFileMetadata(file: File) {
 }
 
 function validateZipArchive(buffer: Buffer) {
-  const endOfCentralDirectoryOffset = findEndOfCentralDirectoryOffset(buffer);
-  if (endOfCentralDirectoryOffset === -1) {
-    throw new UploadValidationError(ZIP_READ_ERROR);
-  }
-
-  if (endOfCentralDirectoryOffset + 22 > buffer.length) {
-    throw new UploadValidationError(ZIP_READ_ERROR);
-  }
-
-  const entryCount = buffer.readUInt16LE(endOfCentralDirectoryOffset + 10);
-  const centralDirectorySize = buffer.readUInt32LE(endOfCentralDirectoryOffset + 12);
-  const centralDirectoryOffset = buffer.readUInt32LE(endOfCentralDirectoryOffset + 16);
-
-  if (
-    entryCount === 0xffff ||
-    centralDirectorySize === 0xffffffff ||
-    centralDirectoryOffset === 0xffffffff ||
-    centralDirectoryOffset + centralDirectorySize > buffer.length
-  ) {
-    throw new UploadValidationError(ZIP_READ_ERROR);
-  }
-
   const maxFiles = getPositiveIntegerEnv("UPLOAD_ZIP_MAX_FILES", DEFAULT_UPLOAD_ZIP_MAX_FILES);
   const maxTotalUncompressedBytes =
     getPositiveIntegerEnv(
@@ -113,91 +93,27 @@ function validateZipArchive(buffer: Buffer) {
       DEFAULT_UPLOAD_ZIP_MAX_TOTAL_UNCOMPRESSED_MB
     ) * 1024 * 1024;
 
-  let offset = centralDirectoryOffset;
-  let checkedFileCount = 0;
-  let totalUncompressedBytes = 0;
-
-  for (let i = 0; i < entryCount; i += 1) {
-    if (offset + 46 > buffer.length || buffer.readUInt32LE(offset) !== 0x02014b50) {
-      throw new UploadValidationError(ZIP_READ_ERROR);
+  try {
+    inspectZipArchive(buffer, {
+      allowedExtensions: ZIP_ENTRY_ALLOWED_EXTENSIONS,
+      blockedExtensions: BLOCKED_EXTENSIONS,
+      maxFiles,
+      maxTotalUncompressedBytes
+    });
+  } catch (error) {
+    if (!(error instanceof ZipInspectionError)) {
+      throw error;
     }
 
-    const flags = buffer.readUInt16LE(offset + 8);
-    const compressedSize = buffer.readUInt32LE(offset + 20);
-    const uncompressedSize = buffer.readUInt32LE(offset + 24);
-    const filenameLength = buffer.readUInt16LE(offset + 28);
-    const extraLength = buffer.readUInt16LE(offset + 30);
-    const commentLength = buffer.readUInt16LE(offset + 32);
-    const entryEnd = offset + 46 + filenameLength + extraLength + commentLength;
+    const messages = {
+      entry: ZIP_ENTRY_ERROR,
+      limit: ZIP_LIMIT_ERROR,
+      path: ZIP_PATH_ERROR,
+      read: ZIP_READ_ERROR
+    } satisfies Record<ZipInspectionError["code"], string>;
 
-    if (entryEnd > buffer.length || compressedSize === 0xffffffff || uncompressedSize === 0xffffffff) {
-      throw new UploadValidationError(ZIP_READ_ERROR);
-    }
-
-    const rawName = buffer.subarray(offset + 46, offset + 46 + filenameLength).toString("utf8");
-    const entryName = normalizeZipEntryName(rawName);
-
-    if (!entryName) {
-      throw new UploadValidationError(ZIP_ENTRY_ERROR);
-    }
-
-    assertSafeZipPath(entryName);
-
-    if (!isIgnorableZipEntry(entryName) && !entryName.endsWith("/")) {
-      if ((flags & 0x0001) === 0x0001) {
-        throw new UploadValidationError(ZIP_READ_ERROR);
-      }
-
-      const extension = getExtension(entryName);
-      if (!extension || BLOCKED_EXTENSIONS.has(extension) || !ZIP_ENTRY_ALLOWED_EXTENSIONS.has(extension)) {
-        throw new UploadValidationError(ZIP_ENTRY_ERROR);
-      }
-
-      checkedFileCount += 1;
-      totalUncompressedBytes += uncompressedSize;
-
-      if (checkedFileCount > maxFiles || totalUncompressedBytes > maxTotalUncompressedBytes) {
-        throw new UploadValidationError(ZIP_LIMIT_ERROR);
-      }
-    }
-
-    offset = entryEnd;
+    throw new UploadValidationError(messages[error.code]);
   }
-}
-
-function findEndOfCentralDirectoryOffset(buffer: Buffer) {
-  const minOffset = Math.max(0, buffer.length - 22 - 0xffff);
-
-  for (let offset = buffer.length - 22; offset >= minOffset; offset -= 1) {
-    if (buffer.readUInt32LE(offset) === 0x06054b50) {
-      return offset;
-    }
-  }
-
-  return -1;
-}
-
-function normalizeZipEntryName(entryName: string) {
-  return entryName.replace(/\0/g, "").replace(/\\/g, "/").trim();
-}
-
-function assertSafeZipPath(entryName: string) {
-  if (
-    entryName.startsWith("/") ||
-    entryName.startsWith("\\") ||
-    /^[A-Za-z]:[\\/]/.test(entryName) ||
-    entryName.split("/").some((segment) => segment === "..")
-  ) {
-    throw new UploadValidationError(ZIP_PATH_ERROR);
-  }
-}
-
-function isIgnorableZipEntry(entryName: string) {
-  const normalized = entryName.replace(/\\/g, "/");
-  const parts = normalized.split("/").filter(Boolean);
-  const basename = parts[parts.length - 1] ?? "";
-
-  return normalized === "__MACOSX/" || normalized.startsWith("__MACOSX/") || basename === ".DS_Store";
 }
 
 function getPositiveIntegerEnv(name: string, fallback: number) {
