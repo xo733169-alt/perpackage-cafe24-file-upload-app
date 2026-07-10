@@ -491,7 +491,7 @@
       return true;
     }
 
-    return false;
+    return hasNoOptionProductUploadContext();
   }
 
   function getConfirmedSelectedProductRows() {
@@ -514,6 +514,80 @@
     }
 
     return confirmedRows;
+  }
+
+  function hasSelectableProductOptions() {
+    var selectors = [
+      ".xans-product-option select[id^='product_option_id']",
+      ".xans-product-option select[name^='option']",
+      ".xans-product-option input[type='radio'][name^='option']",
+      ".xans-product-option input[type='checkbox'][name^='option']"
+    ].join(", ");
+    var controls;
+
+    try {
+      controls = document.querySelectorAll(selectors);
+    } catch (error) {
+      return true;
+    }
+
+    for (var i = 0; i < controls.length; i += 1) {
+      var control = controls[i];
+      if (control.closest && control.closest("#" + WIDGET_ID + ", #totalProductsOption")) continue;
+      if (control.disabled) continue;
+      return true;
+    }
+
+    return false;
+  }
+
+  function getNoOptionProductRow() {
+    if (getConfirmedSelectedProductRows().length || hasSelectableProductOptions()) return null;
+
+    var totalProducts = document.querySelector("#totalProducts");
+    if (!totalProducts || !isElementVisible(totalProducts)) return null;
+
+    var quantityInputs = totalProducts.querySelectorAll("input[name='quantity_opt[]']");
+    for (var i = 0; i < quantityInputs.length; i += 1) {
+      var quantityInput = quantityInputs[i];
+      var row = quantityInput.closest && quantityInput.closest("tr");
+      if (!row || !isElementVisible(row)) continue;
+      if (row.closest && row.closest("tbody.option_products, tbody.add_products")) continue;
+      if (row.id === "totalProductsOption") continue;
+
+      var itemCodeElement = row.querySelector("[item_code]");
+      var itemCode = itemCodeElement && itemCodeElement.getAttribute("item_code");
+      if (!String(itemCode || "").trim()) continue;
+
+      return row;
+    }
+
+    return null;
+  }
+
+  function findNoOptionProductFileIdInput() {
+    if (!getNoOptionProductRow()) return null;
+
+    var markers = document.querySelectorAll("input[type='hidden'][name^='add_option_']");
+    for (var i = 0; i < markers.length; i += 1) {
+      var marker = markers[i];
+      if (marker.closest && marker.closest("#" + WIDGET_ID)) continue;
+      if (!isExactUploadFileIdLabel(marker.value || marker.getAttribute("value") || "")) continue;
+
+      var field = findTextFieldForAddOptionHidden(marker);
+      if (!field) continue;
+
+      return {
+        element: field,
+        source: "no_option_product:exact_upload_file_id"
+      };
+    }
+
+    return null;
+  }
+
+  function hasNoOptionProductUploadContext() {
+    return !!(getNoOptionProductRow() && findNoOptionProductFileIdInput());
   }
 
   function findFileIdInputInSelectedProductRow(row) {
@@ -539,7 +613,9 @@
   function findLatestSelectedProductFileIdInput() {
     var rows = getConfirmedSelectedProductRows();
     var latestRow = rows.length ? rows[rows.length - 1] : null;
-    return findFileIdInputInSelectedProductRow(latestRow);
+    return latestRow
+      ? findFileIdInputInSelectedProductRow(latestRow)
+      : findNoOptionProductFileIdInput();
   }
 
   function isMatchInLatestSelectedProductRow(match) {
@@ -547,7 +623,10 @@
 
     var rows = getConfirmedSelectedProductRows();
     var latestRow = rows.length ? rows[rows.length - 1] : null;
-    return !!(latestRow && latestRow.contains(match.element));
+    if (latestRow) return latestRow.contains(match.element);
+
+    var noOptionMatch = findNoOptionProductFileIdInput();
+    return !!(noOptionMatch && noOptionMatch.element === match.element);
   }
 
   function isStrictUploadFileIdInputMatch(match) {
@@ -681,6 +760,8 @@
 
   function enforceSingleQuantityForSelectedProducts() {
     var rows = getConfirmedSelectedProductRows();
+    var noOptionRow = rows.length ? null : getNoOptionProductRow();
+    if (noOptionRow) rows.push(noOptionRow);
 
     for (var i = 0; i < rows.length; i += 1) {
       var row = rows[i];
@@ -1424,9 +1505,16 @@
 
     function resetAfterCartSuccess() {
       var rows = getConfirmedSelectedProductRows();
+      var fieldToClear = currentUpload && currentUpload.fileIdInputMatch
+        ? currentUpload.fileIdInputMatch
+        : lastFileIdInputMatch;
 
       clearCartSuccessTimers();
       clearAvailabilityTimers();
+
+      if (fieldToClear && fieldToClear.element && document.documentElement.contains(fieldToClear.element)) {
+        clearFileIdInput(fieldToClear);
+      }
 
       for (var i = 0; i < rows.length; i += 1) {
         clearSelectedProductRowFileId(rows[i]);
@@ -1634,7 +1722,7 @@
       }
 
       if (hasSelectedRow) {
-        hideUploadFileIdAddOptionRows(document.querySelector("#totalProducts"));
+        hideUploadFileIdAddOptionRows(document);
         match = findLatestSelectedProductFileIdInput() || (isMatchInLatestSelectedProductRow(match) ? match : null);
       } else {
         match = null;
@@ -1704,14 +1792,8 @@
       if (!retainedCompletedUpload || !retainedCompletedUpload.fileId) return null;
       if (!hasVisibleSelectedProductRow()) return null;
 
-      var selectedRows = getConfirmedSelectedProductRows();
-      var latestRow = selectedRows.length ? selectedRows[selectedRows.length - 1] : null;
-      var rowMatch = findFileIdInputInSelectedProductRow(latestRow);
-      var preferredMatch = rowMatch || (
-        match && match.element && latestRow && latestRow.contains(match.element)
-          ? match
-          : null
-      );
+      var preferredMatch = findLatestSelectedProductFileIdInput() ||
+        (isMatchInLatestSelectedProductRow(match) ? match : null);
       if (!preferredMatch || !preferredMatch.element) return null;
 
       var syncResult;
