@@ -802,7 +802,7 @@
 
     for (var i = 0; i < controls.length; i += 1) {
       var control = controls[i];
-      control.style.display = "none";
+      control.style.setProperty("display", "none", "important");
       control.setAttribute("aria-hidden", "true");
       control.setAttribute("tabindex", "-1");
 
