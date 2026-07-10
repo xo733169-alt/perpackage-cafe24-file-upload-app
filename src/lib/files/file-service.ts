@@ -41,14 +41,14 @@ export async function uploadFile(input: FileUploadInput): Promise<UploadedFileRe
     storedFilename
   });
   const buffer = Buffer.from(await input.file.arrayBuffer());
-  await validateUploadFile({
+  const validatedFile = validateUploadFile({
     file: input.file,
     buffer
   });
   const uploaded = await uploadToNaverObjectStorage({
     key: storagePath,
     body: buffer,
-    contentType: input.file.type || "application/octet-stream"
+    contentType: validatedFile.canonicalMimeType
   });
   const supabase = getSupabaseAdmin();
   const now = new Date().toISOString();
@@ -64,7 +64,7 @@ export async function uploadFile(input: FileUploadInput): Promise<UploadedFileRe
       original_filename: originalFilename,
       stored_filename: storedFilename,
       file_size: input.file.size,
-      mime_type: input.file.type || "application/octet-stream",
+      mime_type: validatedFile.canonicalMimeType,
       storage_provider: STORAGE_PROVIDER,
       storage_bucket: uploaded.bucket,
       storage_path: uploaded.path,

@@ -931,7 +931,7 @@
   }
 
   function getMultipleFilesMessage() {
-    return "파일은 1개만 업로드할 수 있습니다. 여러 파일은 ZIP 1개로 압축해 업로드해 주세요. ZIP 안에는 AI, PDF, EPS, JPG, PNG 파일만 포함해 주세요.";
+    return "파일은 1개만 업로드할 수 있습니다. 여러 파일은 ZIP 1개로 압축해 업로드해 주세요. ZIP 안에는 AI, PDF, EPS, PSD, TIFF, JPG, PNG, DXF 파일만 포함해 주세요.";
   }
 
   function getFileIdChangedMessage() {
@@ -1167,13 +1167,13 @@
     wrapper.setAttribute("aria-hidden", "true");
     wrapper.innerHTML = [
       '<h3 class="ppu-title">인쇄파일 업로드</h3>',
-      '<p class="ppu-desc">AI, PDF, EPS, JPG, PNG, ZIP 파일을 업로드할 수 있습니다.</p>',
+      '<p class="ppu-desc">AI, PDF, EPS, PSD, TIFF, JPG, PNG, DXF, ZIP 파일을 업로드할 수 있습니다.</p>',
       '<p class="ppu-desc">파일은 1개만 업로드할 수 있습니다.</p>',
       '<p class="ppu-desc">여러 파일은 ZIP 1개로 압축해 업로드해 주세요.</p>',
-      '<p class="ppu-desc">ZIP 안에는 AI, PDF, EPS, JPG, PNG 파일만 포함해 주세요.</p>',
+      '<p class="ppu-desc">ZIP 안에는 AI, PDF, EPS, PSD, TIFF, JPG, PNG, DXF 파일만 포함해 주세요.</p>',
       '<p class="ppu-desc">최대 100MB까지 업로드할 수 있습니다.</p>',
       '<form class="ppu-form">',
-      '<input class="ppu-file" name="file" type="file" accept=".ai,.pdf,.eps,.jpg,.jpeg,.png,.zip" required aria-label="인쇄파일 선택">',
+      '<input class="ppu-file" name="file" type="file" accept=".ai,.pdf,.eps,.psd,.tif,.tiff,.jpg,.jpeg,.png,.dxf,.zip" required aria-label="인쇄파일 선택">',
       '<button class="ppu-button" type="submit">파일 업로드</button>',
       '<p class="ppu-status" role="status"></p>',
       '<div class="ppu-result" hidden></div>',
@@ -1351,18 +1351,18 @@
     wrapper.setAttribute("aria-hidden", "true");
     wrapper.innerHTML = [
       '<h3 class="ppu-title">인쇄용 파일 업로드</h3>',
-      '<p class="ppu-desc">AI, PDF, EPS, JPG, PNG, ZIP 파일을 업로드할 수 있습니다.</p>',
+      '<p class="ppu-desc">AI, PDF, EPS, PSD, TIFF, JPG, PNG, DXF, ZIP 파일을 업로드할 수 있습니다.</p>',
       '<p class="ppu-desc">파일은 1개만 업로드할 수 있습니다.</p>',
       '<p class="ppu-desc">여러 파일은 ZIP 1개로 압축해 업로드해 주세요.</p>',
       '<p class="ppu-desc">최대 100MB까지 업로드할 수 있습니다.</p>',
-      '<p class="ppu-desc">ZIP 안에는 AI, PDF, EPS, JPG, PNG 파일만 포함해 주세요.</p>',
+      '<p class="ppu-desc">ZIP 안에는 AI, PDF, EPS, PSD, TIFF, JPG, PNG, DXF 파일만 포함해 주세요.</p>',
       '<p class="ppu-option-gate" data-ppu-option-gate>파일 업로드는 선택사항입니다.</p>',
       '<form class="ppu-form">',
       '<div class="ppu-upload-controls" data-ppu-upload-controls>',
       '<label class="ppu-dropzone" data-ppu-dropzone>',
       '<span class="ppu-drop-title">파일을 선택하거나 이곳에 끌어다 놓으세요</span>',
-      '<span class="ppu-drop-desc">AI, PDF, EPS, JPG, PNG, ZIP 파일 / 최대 100MB</span>',
-      '<input class="ppu-file" name="file" type="file" accept=".ai,.pdf,.eps,.jpg,.jpeg,.png,.zip" required aria-label="인쇄용 파일 선택">',
+      '<span class="ppu-drop-desc">AI, PDF, EPS, PSD, TIFF, JPG, PNG, DXF, ZIP 파일 / 최대 100MB</span>',
+      '<input class="ppu-file" name="file" type="file" accept=".ai,.pdf,.eps,.psd,.tif,.tiff,.jpg,.jpeg,.png,.dxf,.zip" required aria-label="인쇄용 파일 선택">',
       "</label>",
       '<button class="ppu-button" type="submit">파일 업로드</button>',
       "</div>",
@@ -2239,18 +2239,18 @@
     wrapper.setAttribute("aria-hidden", "true");
     wrapper.innerHTML = [
       '<h3 class="ppu-title">인쇄용 파일 업로드</h3>',
-      '<p class="ppu-desc">AI, PDF, EPS, JPG, PNG, ZIP 파일을 업로드할 수 있습니다.</p>',
+      '<p class="ppu-desc">AI, PDF, EPS, PSD, TIFF, JPG, PNG, DXF, ZIP 파일을 업로드할 수 있습니다.</p>',
       '<p class="ppu-desc">파일은 1개만 업로드할 수 있습니다.</p>',
       '<p class="ppu-desc">여러 파일은 ZIP 1개로 압축해 업로드해 주세요.</p>',
       '<p class="ppu-desc">최대 100MB까지 업로드할 수 있습니다.</p>',
-      '<p class="ppu-desc">ZIP 안에는 AI, PDF, EPS, JPG, PNG 파일만 포함해 주세요.</p>',
+      '<p class="ppu-desc">ZIP 안에는 AI, PDF, EPS, PSD, TIFF, JPG, PNG, DXF 파일만 포함해 주세요.</p>',
       '<p class="ppu-option-gate" data-ppu-option-gate>파일 업로드는 선택사항입니다.</p>',
       '<form class="ppu-form">',
       '<div class="ppu-upload-controls" data-ppu-upload-controls>',
       '<label class="ppu-dropzone" data-ppu-dropzone>',
       '<span class="ppu-drop-title">파일을 선택하거나 이곳에 끌어다 놓으세요</span>',
-      '<span class="ppu-drop-desc">AI, PDF, EPS, JPG, PNG, ZIP 파일 / 최대 100MB</span>',
-      '<input class="ppu-file" name="file" type="file" accept=".ai,.pdf,.eps,.jpg,.jpeg,.png,.zip" required aria-label="인쇄용 파일 선택">',
+      '<span class="ppu-drop-desc">AI, PDF, EPS, PSD, TIFF, JPG, PNG, DXF, ZIP 파일 / 최대 100MB</span>',
+      '<input class="ppu-file" name="file" type="file" accept=".ai,.pdf,.eps,.psd,.tif,.tiff,.jpg,.jpeg,.png,.dxf,.zip" required aria-label="인쇄용 파일 선택">',
       "</label>",
       '<button class="ppu-button" type="submit">파일 업로드</button>',
       "</div>",

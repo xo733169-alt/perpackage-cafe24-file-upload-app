@@ -85,6 +85,7 @@ export async function createSignedDownloadUrl(input: {
     new GetObjectCommand({
       Bucket: input.bucket,
       Key: input.key,
+      ResponseContentType: "application/octet-stream",
       ResponseContentDisposition: input.filename
         ? buildAttachmentContentDisposition(input.filename)
         : undefined

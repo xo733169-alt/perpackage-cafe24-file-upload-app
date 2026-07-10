@@ -90,7 +90,9 @@ export async function GET(request: NextRequest) {
       result: "success"
     });
 
-    return NextResponse.redirect(signedUrl, 302);
+    const response = NextResponse.redirect(signedUrl, 302);
+    response.headers.set("X-Content-Type-Options", "nosniff");
+    return response;
   } catch (error) {
     await createFileDownloadLog({
       fileId,

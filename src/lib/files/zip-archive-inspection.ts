@@ -12,6 +12,7 @@ type InspectZipArchiveOptions = {
   blockedExtensions: ReadonlySet<string>;
   maxFiles: number;
   maxTotalUncompressedBytes: number;
+  maxCompressionRatio: number;
 };
 
 const centralDirectorySignature = 0x02014b50;
@@ -41,7 +42,9 @@ export function inspectZipArchive(data: Uint8Array, options: InspectZipArchiveOp
 
   let offset = centralDirectoryOffset;
   let checkedFileCount = 0;
+  let totalCompressedBytes = 0;
   let totalUncompressedBytes = 0;
+  let maximumCompressionRatio = 0;
 
   for (let index = 0; index < entryCount; index += 1) {
     if (offset + 46 > data.byteLength || view.getUint32(offset, true) !== centralDirectorySignature) {
@@ -80,11 +83,16 @@ export function inspectZipArchive(data: Uint8Array, options: InspectZipArchiveOp
       }
 
       checkedFileCount += 1;
+      totalCompressedBytes += compressedSize;
       totalUncompressedBytes += uncompressedSize;
+      const compressionRatio = uncompressedSize / Math.max(compressedSize, 1);
+      maximumCompressionRatio = Math.max(maximumCompressionRatio, compressionRatio);
 
       if (
         checkedFileCount > options.maxFiles ||
-        totalUncompressedBytes > options.maxTotalUncompressedBytes
+        totalUncompressedBytes > options.maxTotalUncompressedBytes ||
+        compressionRatio > options.maxCompressionRatio ||
+        totalUncompressedBytes / Math.max(totalCompressedBytes, 1) > options.maxCompressionRatio
       ) {
         throw new ZipInspectionError("limit");
       }
@@ -93,7 +101,11 @@ export function inspectZipArchive(data: Uint8Array, options: InspectZipArchiveOp
     offset = entryEnd;
   }
 
-  return { checkedFileCount, totalUncompressedBytes };
+  if (checkedFileCount === 0) {
+    throw new ZipInspectionError("entry");
+  }
+
+  return { checkedFileCount, totalCompressedBytes, totalUncompressedBytes, maximumCompressionRatio };
 }
 
 function findEndOfCentralDirectoryOffset(view: DataView) {
