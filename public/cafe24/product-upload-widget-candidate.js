@@ -307,10 +307,7 @@
     return true;
   }
 
-  function findTextFieldForAddOptionHidden(hiddenField) {
-    if (!hiddenField) return null;
-
-    var container = hiddenField.closest && hiddenField.closest("tr");
+  function findAddOptionValueFieldInRow(container) {
     if (!container || !container.querySelectorAll) return null;
 
     var fields = container.querySelectorAll([
@@ -322,17 +319,48 @@
 
     for (var i = 0; i < fields.length; i += 1) {
       var field = fields[i];
-      if (field === hiddenField) continue;
       if (isAddOptionValueFieldCandidate(field)) return field;
     }
 
     return null;
   }
 
+  function findTextFieldForAddOptionHidden(hiddenField) {
+    if (!hiddenField) return null;
+
+    var container = hiddenField.closest && hiddenField.closest("tr");
+    return findAddOptionValueFieldInRow(container);
+  }
+
   function getUploadFileIdAddOptionRowFromHidden(hiddenField) {
     if (!hiddenField) return null;
     if (!isExactUploadFileIdLabel(hiddenField.value || hiddenField.getAttribute("value") || "")) return null;
     return hiddenField.closest && hiddenField.closest("tr");
+  }
+
+  function getUploadFileIdAddOptionRowFromLabel(row) {
+    if (!row || !row.querySelector) return null;
+
+    var label = row.querySelector("th");
+    if (!label || !isUploadFileIdRowLabel(label.textContent || "")) return null;
+    return findAddOptionValueFieldInRow(row) ? row : null;
+  }
+
+  function visuallyHideUploadFileIdRow(row) {
+    if (!row || row.closest && row.closest("#" + WIDGET_ID)) return;
+
+    row.hidden = false;
+    row.style.display = "";
+    row.style.visibility = "";
+    row.style.position = "absolute";
+    row.style.left = "-9999px";
+    row.style.top = "auto";
+    row.style.width = "1px";
+    row.style.height = "1px";
+    row.style.overflow = "hidden";
+    row.style.opacity = "0";
+    row.style.pointerEvents = "none";
+    row.setAttribute("data-perpackage-upload-file-id-row", "visually-hidden");
   }
 
   function hideUploadFileIdAddOptionRows(root) {
@@ -347,19 +375,21 @@
 
     for (var i = 0; i < markers.length; i += 1) {
       var row = getUploadFileIdAddOptionRowFromHidden(markers[i]);
-      if (!row || row.closest && row.closest("#" + WIDGET_ID)) continue;
-      row.hidden = false;
-      row.style.display = "";
-      row.style.visibility = "";
-      row.style.position = "absolute";
-      row.style.left = "-9999px";
-      row.style.top = "auto";
-      row.style.width = "1px";
-      row.style.height = "1px";
-      row.style.overflow = "hidden";
-      row.style.opacity = "0";
-      row.style.pointerEvents = "none";
-      row.setAttribute("data-perpackage-upload-file-id-row", "visually-hidden");
+      if (!row) continue;
+      visuallyHideUploadFileIdRow(row);
+    }
+
+    var labeledRows;
+    try {
+      labeledRows = scope.querySelectorAll("tr.xans-product-addoption, #totalProductsOption tr");
+    } catch (error) {
+      return;
+    }
+
+    for (var rowIndex = 0; rowIndex < labeledRows.length; rowIndex += 1) {
+      var labeledRow = getUploadFileIdAddOptionRowFromLabel(labeledRows[rowIndex]);
+      if (!labeledRow) continue;
+      visuallyHideUploadFileIdRow(labeledRow);
     }
   }
 
@@ -470,6 +500,12 @@
     var text = normalizeSearchText(value);
     if (!text) return false;
     return text === expectedLabel || compactSearchText(text) === compactSearchText(expectedLabel);
+  }
+
+  function isUploadFileIdRowLabel(value) {
+    var expected = compactSearchText("\uc5c5\ub85c\ub4dc \ud30c\uc77c ID");
+    var compact = compactSearchText(value);
+    return compact === expected || compact === expected + "\uc120\ud0dd" || compact === expected + "\ud544\uc218";
   }
 
   function hasVisibleSelectedProductRow() {
@@ -583,6 +619,20 @@
       };
     }
 
+    var labeledRows = document.querySelectorAll("tr.xans-product-addoption, #totalProductsOption tr");
+    for (var rowIndex = 0; rowIndex < labeledRows.length; rowIndex += 1) {
+      var row = getUploadFileIdAddOptionRowFromLabel(labeledRows[rowIndex]);
+      if (!row || row.closest && row.closest("#" + WIDGET_ID)) continue;
+
+      var labeledField = findAddOptionValueFieldInRow(row);
+      if (!labeledField) continue;
+
+      return {
+        element: labeledField,
+        source: "no_option_product:exact_upload_file_id_label"
+      };
+    }
+
     return null;
   }
 
@@ -640,6 +690,11 @@
       if (isExactUploadFileIdLabel(markers[i].value || markers[i].getAttribute("value") || "")) {
         return findTextFieldForAddOptionHidden(markers[i]) === match.element;
       }
+    }
+
+    var labeledRow = getUploadFileIdAddOptionRowFromLabel(row);
+    if (labeledRow) {
+      return findAddOptionValueFieldInRow(labeledRow) === match.element;
     }
 
     return false;
