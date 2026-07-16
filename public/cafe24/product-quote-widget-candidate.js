@@ -9,6 +9,21 @@
   var priceRequestTimer = null;
   var currentPriceRequest = null;
   var priceCache = Object.create(null);
+  // Cafe24 stores the customer-facing material family; basis weight stays in quote data.
+  var DEFAULT_CAFE24_OPTION_VALUE_MAP = {
+    material: {
+      AB_LIGHT_250: "AB라이트",
+      AB_LIGHT_270: "AB라이트",
+      BAMBOO_NATURAL_300: "밤부팩(내추럴)",
+      BAMBOO_NATURAL_350: "밤부팩(내추럴)",
+      EGGSHELL_300: "에그쉘팩",
+      EGGSHELL_350: "에그쉘팩",
+      OLD_MILL_RECYCLE_300: "올드밀(리사이클)",
+      OLD_MILL_RECYCLE_350: "올드밀(리사이클)",
+      KRAFT_300: "크라프트지",
+      KRAFT_350: "크라프트지"
+    }
+  };
 
   function getRoot() {
     if (CONFIG.targetSelector) {
@@ -217,7 +232,15 @@
     };
   }
 
-  function setCafe24SelectValue(selector, label) {
+  function getCafe24OptionValue(optionType, optionCode, fallbackLabel) {
+    var configuredMap = CONFIG.cafe24OptionValueMap || {};
+    var optionMap = configuredMap[optionType] || {};
+    var defaultMap = DEFAULT_CAFE24_OPTION_VALUE_MAP[optionType] || {};
+    var configuredValue = optionMap[optionCode] || defaultMap[optionCode];
+    return configuredValue ? String(configuredValue).trim() : fallbackLabel;
+  }
+
+  function findCafe24SelectValue(selector, label) {
     if (!selector || !label) return false;
 
     var select = document.querySelector(selector);
@@ -227,12 +250,16 @@
       return option.value === label || (option.textContent || "").trim() === label;
     });
     if (!matchingOption) return false;
-    if (select.value === matchingOption.value) return true;
 
-    select.value = matchingOption.value;
-    select.dispatchEvent(new Event("input", { bubbles: true }));
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-    return true;
+    return { select: select, value: matchingOption.value };
+  }
+
+  function applyCafe24SelectValue(target) {
+    if (target.select.value === target.value) return;
+
+    target.select.value = target.value;
+    target.select.dispatchEvent(new Event("input", { bubbles: true }));
+    target.select.dispatchEvent(new Event("change", { bubbles: true }));
   }
 
   function renderChoices(container, items, getValue, getLabel, onChange) {
@@ -370,12 +397,33 @@
       var materialLabel = findOptionLabel(options.materials, payload.material_code);
       var printLabel = findOptionLabel(options.print_options, payload.print_option_code);
       var finishLabel = findOptionLabel(options.finish_options, payload.finish_option_code);
+      var targets = [
+        findCafe24SelectValue(
+          selectors.material,
+          getCafe24OptionValue("material", payload.material_code, materialLabel)
+        ),
+        findCafe24SelectValue(
+          selectors.size,
+          getCafe24OptionValue("size", payload.size_code, sizeLabel)
+        ),
+        findCafe24SelectValue(
+          selectors.quantity,
+          getCafe24OptionValue("quantity", String(payload.quantity), String(payload.quantity))
+        ),
+        findCafe24SelectValue(
+          selectors.print,
+          getCafe24OptionValue("print", payload.print_option_code, printLabel)
+        ),
+        findCafe24SelectValue(
+          selectors.finish,
+          getCafe24OptionValue("finish", payload.finish_option_code, finishLabel)
+        )
+      ];
 
-      setCafe24SelectValue(selectors.material, materialLabel);
-      setCafe24SelectValue(selectors.size, sizeLabel);
-      setCafe24SelectValue(selectors.quantity, String(payload.quantity));
-      setCafe24SelectValue(selectors.print, printLabel);
-      setCafe24SelectValue(selectors.finish, finishLabel);
+      // Do not partially change Cafe24's selected product when any option does not match.
+      if (targets.some(function (target) { return !target; })) return;
+
+      targets.forEach(applyCafe24SelectValue);
     }
 
     function handleCustomerSelection() {
