@@ -8,6 +8,7 @@
   var DEFAULT_APP_ORIGIN = "https://perpackage-cafe24-file-upload-app.vercel.app";
   var priceRequestTimer = null;
   var currentPriceRequest = null;
+  var priceCache = Object.create(null);
 
   function getRoot() {
     if (CONFIG.targetSelector) {
@@ -330,6 +331,34 @@
       priceRequestTimer = window.setTimeout(loadPrice, 160);
     }
 
+    function getPricePayload() {
+      return {
+        product_code: options.product.code,
+        size_code: sizeField.select.value,
+        material_code: materialField.select.value,
+        quantity: Number(selectedChoiceValue(quantityChoices)),
+        print_option_code: selectedChoiceValue(printChoices),
+        finish_option_code: finishCode
+      };
+    }
+
+    function getPriceCacheKey(payload) {
+      return [
+        payload.product_code,
+        payload.size_code,
+        payload.material_code,
+        payload.quantity,
+        payload.print_option_code,
+        payload.finish_option_code
+      ].join("|");
+    }
+
+    function renderPrice(response) {
+      priceValue.textContent = formatWon(response.price.vat_inclusive_price);
+      unitPrice.textContent = "개당 " + formatWon(response.price.unit_price);
+      setMessage(message, "", false);
+    }
+
     function loadPrice() {
       if (!finishCode) {
         priceValue.textContent = "가격 확인 불가";
@@ -341,28 +370,32 @@
       if (currentPriceRequest) {
         currentPriceRequest.abort();
       }
+
+      var payload = getPricePayload();
+      var cacheKey = getPriceCacheKey(payload);
+      var cachedResponse = priceCache[cacheKey];
+      if (cachedResponse) {
+        renderPrice(cachedResponse);
+        return;
+      }
+
       currentPriceRequest = new AbortController();
       priceValue.textContent = "가격 확인 중";
       unitPrice.textContent = "";
-      setMessage(message, "", false);
+      setMessage(message, "선택한 사양의 가격을 계산하고 있습니다.", false);
 
       requestJson(appOrigin + "/api/quotes/price", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: currentPriceRequest.signal,
-        body: JSON.stringify({
-          product_code: options.product.code,
-          size_code: sizeField.select.value,
-          material_code: materialField.select.value,
-          quantity: Number(selectedChoiceValue(quantityChoices)),
-          print_option_code: selectedChoiceValue(printChoices),
-          finish_option_code: finishCode
-        })
+        body: JSON.stringify(payload)
       }).then(function (response) {
-        priceValue.textContent = formatWon(response.price.vat_inclusive_price);
-        unitPrice.textContent = "개당 " + formatWon(response.price.unit_price);
+        priceCache[cacheKey] = response;
+        if (cacheKey !== getPriceCacheKey(getPricePayload())) return;
+        renderPrice(response);
       }).catch(function (error) {
         if (error && error.name === "AbortError") return;
+        if (cacheKey !== getPriceCacheKey(getPricePayload())) return;
         priceValue.textContent = "가격 확인 불가";
         unitPrice.textContent = "";
         setMessage(message, error && error.message ? error.message : "가격을 확인할 수 없습니다.", true);
