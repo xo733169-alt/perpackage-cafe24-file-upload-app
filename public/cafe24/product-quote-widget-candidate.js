@@ -9,6 +9,8 @@
   var priceRequestTimer = null;
   var currentPriceRequest = null;
   var priceCache = Object.create(null);
+  var cafe24SyncTimer = null;
+  var cafe24SyncRequestId = 0;
   // Cafe24 stores the customer-facing material family; basis weight stays in quote data.
   var DEFAULT_CAFE24_OPTION_VALUE_MAP = {
     material: {
@@ -263,12 +265,58 @@
     return { select: select, value: matchingOption.value };
   }
 
+  function findCafe24OptionButton(target) {
+    if (!target.select.id) return null;
+
+    var optionList = Array.prototype.find.call(
+      document.querySelectorAll("ul[ec-dev-id]"),
+      function (list) {
+        return list.getAttribute("ec-dev-id") === target.select.id;
+      }
+    );
+    if (!optionList) return null;
+
+    var matchingItem = Array.prototype.find.call(optionList.querySelectorAll("li[option_value]"), function (item) {
+      return item.getAttribute("option_value") === target.value;
+    });
+    return matchingItem ? matchingItem.querySelector("a") : null;
+  }
+
   function applyCafe24SelectValue(target) {
-    if (target.select.value === target.value) return;
+    var optionButton = findCafe24OptionButton(target);
+    var optionItem = optionButton ? optionButton.parentElement : null;
+    if (
+      target.select.value === target.value &&
+      (!optionItem || optionItem.classList.contains("ec-product-selected"))
+    ) {
+      return;
+    }
+
+    if (optionButton) {
+      optionButton.click();
+      return;
+    }
 
     target.select.value = target.value;
     target.select.dispatchEvent(new Event("input", { bubbles: true }));
     target.select.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  function applyCafe24Targets(targets, index, requestId) {
+    if (requestId !== cafe24SyncRequestId || index >= targets.length) return;
+
+    applyCafe24SelectValue(targets[index]);
+    cafe24SyncTimer = window.setTimeout(function () {
+      applyCafe24Targets(targets, index + 1, requestId);
+    }, 60);
+  }
+
+  function queueCafe24Targets(targets) {
+    if (cafe24SyncTimer) {
+      window.clearTimeout(cafe24SyncTimer);
+    }
+    cafe24SyncRequestId += 1;
+    applyCafe24Targets(targets, 0, cafe24SyncRequestId);
   }
 
   function renderChoices(container, items, getValue, getLabel, onChange, initialValue) {
@@ -443,7 +491,7 @@
       // Do not partially change Cafe24's selected product when any option does not match.
       if (targets.some(function (target) { return !target; })) return;
 
-      targets.forEach(applyCafe24SelectValue);
+      queueCafe24Targets(targets);
     }
 
     function handleCustomerSelection() {
