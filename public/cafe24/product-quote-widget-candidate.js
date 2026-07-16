@@ -199,6 +199,42 @@
     return selected ? selected.getAttribute("data-value") || "" : "";
   }
 
+  function findOptionLabel(items, code) {
+    var found = items.find(function (item) {
+      return item.code === code;
+    });
+    return found ? found.label : "";
+  }
+
+  function getCafe24OptionSelectors() {
+    var configured = CONFIG.cafe24OptionSelectors || {};
+    return {
+      material: configured.material || "#product_option_id1",
+      size: configured.size || "#product_option_id2",
+      quantity: configured.quantity || "#product_option_id3",
+      print: configured.print || "#product_option_id4",
+      finish: configured.finish || "#product_option_id5"
+    };
+  }
+
+  function setCafe24SelectValue(selector, label) {
+    if (!selector || !label) return false;
+
+    var select = document.querySelector(selector);
+    if (!select || select.tagName !== "SELECT") return false;
+
+    var matchingOption = Array.prototype.find.call(select.options, function (option) {
+      return option.value === label || (option.textContent || "").trim() === label;
+    });
+    if (!matchingOption) return false;
+    if (select.value === matchingOption.value) return true;
+
+    select.value = matchingOption.value;
+    select.dispatchEvent(new Event("input", { bubbles: true }));
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    return true;
+  }
+
   function renderChoices(container, items, getValue, getLabel, onChange) {
     clearElement(container);
     items.forEach(function (item, index) {
@@ -306,23 +342,47 @@
       return option.code === "none";
     });
     var finishCode = finishOption ? finishOption.code : "";
+    var hasCustomerSelection = false;
     setMaterialsForSize();
     renderChoices(quantityChoices, options.quantities, function (quantity) {
       return quantity;
     }, function (quantity) {
       return Number(quantity).toLocaleString("ko-KR") + "개";
-    }, schedulePriceRequest);
+    }, handleCustomerSelection);
     renderChoices(printChoices, options.print_options, function (option) {
       return option.code;
     }, function (option) {
       return option.label;
-    }, schedulePriceRequest);
+    }, handleCustomerSelection);
 
     sizeField.select.addEventListener("change", function () {
       setMaterialsForSize();
-      schedulePriceRequest();
+      handleCustomerSelection();
     });
-    materialField.select.addEventListener("change", schedulePriceRequest);
+    materialField.select.addEventListener("change", handleCustomerSelection);
+
+    function syncCafe24Options() {
+      if (!hasCustomerSelection || CONFIG.syncCafe24Options !== true) return;
+
+      var selectors = getCafe24OptionSelectors();
+      var payload = getPricePayload();
+      var sizeLabel = findOptionLabel(options.sizes, payload.size_code);
+      var materialLabel = findOptionLabel(options.materials, payload.material_code);
+      var printLabel = findOptionLabel(options.print_options, payload.print_option_code);
+      var finishLabel = findOptionLabel(options.finish_options, payload.finish_option_code);
+
+      setCafe24SelectValue(selectors.material, materialLabel);
+      setCafe24SelectValue(selectors.size, sizeLabel);
+      setCafe24SelectValue(selectors.quantity, String(payload.quantity));
+      setCafe24SelectValue(selectors.print, printLabel);
+      setCafe24SelectValue(selectors.finish, finishLabel);
+    }
+
+    function handleCustomerSelection() {
+      hasCustomerSelection = true;
+      syncCafe24Options();
+      schedulePriceRequest();
+    }
 
     function schedulePriceRequest() {
       if (priceRequestTimer) {
