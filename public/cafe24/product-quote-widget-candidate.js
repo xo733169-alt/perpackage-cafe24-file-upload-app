@@ -148,6 +148,7 @@
       "#" + WIDGET_ID + " .ppq-field-wide{grid-column:1/-1}",
       "#" + WIDGET_ID + " .ppq-label{display:block;margin-bottom:7px;color:#27334f;font-size:13px;font-weight:700}",
       "#" + WIDGET_ID + " .ppq-select{width:100%;height:42px;padding:0 34px 0 12px;border:1px solid #c9d2e2;border-radius:6px;background:#fff;color:#19213a;font:inherit;font-size:13px}",
+      "#" + WIDGET_ID + " .ppq-select:disabled{background:#f5f7fa;color:#8791a5;cursor:not-allowed}",
       "#" + WIDGET_ID + " .ppq-select:focus{outline:2px solid #b9c9ec;outline-offset:1px;border-color:#31549b}",
       "#" + WIDGET_ID + " .ppq-choice-list{display:flex;flex-wrap:wrap;gap:7px}",
       "#" + WIDGET_ID + " .ppq-choice{min-width:72px;padding:9px 11px;border:1px solid #c9d2e2;border-radius:6px;background:#fff;color:#33415e;font:inherit;font-size:13px;line-height:1.2;cursor:pointer}",
@@ -194,8 +195,16 @@
     return { field: field, select: select };
   }
 
-  function setSelectOptions(select, items, getValue, getLabel) {
+  function setSelectOptions(select, items, getValue, getLabel, placeholder) {
     clearElement(select);
+    if (placeholder) {
+      var placeholderOption = document.createElement("option");
+      placeholderOption.value = "";
+      placeholderOption.textContent = placeholder;
+      placeholderOption.disabled = true;
+      placeholderOption.selected = true;
+      select.appendChild(placeholderOption);
+    }
     items.forEach(function (item) {
       var option = document.createElement("option");
       option.value = String(getValue(item));
@@ -262,13 +271,13 @@
     target.select.dispatchEvent(new Event("change", { bubbles: true }));
   }
 
-  function renderChoices(container, items, getValue, getLabel, onChange) {
+  function renderChoices(container, items, getValue, getLabel, onChange, initialValue) {
     clearElement(container);
-    items.forEach(function (item, index) {
+    items.forEach(function (item) {
       var button = createElement("button", "ppq-choice", getLabel(item));
       button.type = "button";
       button.setAttribute("data-value", String(getValue(item)));
-      button.setAttribute("aria-pressed", index === 0 ? "true" : "false");
+      button.setAttribute("aria-pressed", String(String(getValue(item)) === String(initialValue)));
       button.addEventListener("click", function () {
         Array.prototype.forEach.call(container.querySelectorAll("button"), function (choice) {
           choice.setAttribute("aria-pressed", choice === button ? "true" : "false");
@@ -347,10 +356,20 @@
       return size.code;
     }, function (size) {
       return size.label + " mm";
-    });
+    }, "사이즈를 선택해 주세요");
 
     function setMaterialsForSize() {
       var sizeCode = sizeField.select.value;
+      if (!sizeCode) {
+        setSelectOptions(materialField.select, [], function () {
+          return "";
+        }, function () {
+          return "";
+        }, "먼저 사이즈를 선택해 주세요");
+        materialField.select.disabled = true;
+        return;
+      }
+
       var selectedSize = options.sizes.find(function (size) {
         return size.code === sizeCode;
       });
@@ -362,7 +381,8 @@
         return material.code;
       }, function (material) {
         return material.label;
-      });
+      }, "종이를 선택해 주세요");
+      materialField.select.disabled = false;
     }
 
     var finishOption = options.finish_options.find(function (option) {
@@ -375,12 +395,12 @@
       return quantity;
     }, function (quantity) {
       return Number(quantity).toLocaleString("ko-KR") + "개";
-    }, handleCustomerSelection);
+    }, handleCustomerSelection, "");
     renderChoices(printChoices, options.print_options, function (option) {
       return option.code;
     }, function (option) {
       return option.label;
-    }, handleCustomerSelection);
+    }, handleCustomerSelection, "");
 
     sizeField.select.addEventListener("change", function () {
       setMaterialsForSize();
@@ -428,8 +448,32 @@
 
     function handleCustomerSelection() {
       hasCustomerSelection = true;
+      if (!hasRequiredSelections()) {
+        showSelectionPrompt();
+        return;
+      }
       syncCafe24Options();
       schedulePriceRequest();
+    }
+
+    function hasRequiredSelections() {
+      return Boolean(
+        sizeField.select.value &&
+        materialField.select.value &&
+        selectedChoiceValue(quantityChoices) &&
+        selectedChoiceValue(printChoices) &&
+        finishCode
+      );
+    }
+
+    function showSelectionPrompt() {
+      if (currentPriceRequest) {
+        currentPriceRequest.abort();
+        currentPriceRequest = null;
+      }
+      priceValue.textContent = "사양 선택 필요";
+      unitPrice.textContent = "";
+      setMessage(message, "사이즈, 종이, 수량, 인쇄를 모두 선택해 주세요.", false);
     }
 
     function schedulePriceRequest() {
@@ -468,6 +512,11 @@
     }
 
     function loadPrice() {
+      if (!hasRequiredSelections()) {
+        showSelectionPrompt();
+        return;
+      }
+
       if (!finishCode) {
         priceValue.textContent = "가격 확인 불가";
         unitPrice.textContent = "";
@@ -510,7 +559,7 @@
       });
     }
 
-    loadPrice();
+    showSelectionPrompt();
   }
 
   function hideRoot(root) {
