@@ -6,6 +6,7 @@ import {
   updateProofConfirmationStatusAction
 } from "@/app/admin/actions";
 import { AdminDownloadLink, AdminRefreshButton } from "@/components/AdminDownloadLogRefreshControls";
+import { AdminCafe24QuotePricePreflightPanel } from "@/components/AdminCafe24QuotePricePreflightPanel";
 import { AdminFileStatusForm } from "@/components/AdminFileStatusForm";
 import { CopyFileIdButton } from "@/components/CopyFileIdButton";
 import { ProofConfirmationMessagePanel } from "@/components/ProofConfirmationMessagePanel";
@@ -2483,6 +2484,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
           <div className="card"><span>scopes</span><strong>{data.installation?.scopes ?? "-"}</strong></div>
         </div>
       </section>
+      <AdminCafe24QuotePricePreflightPanel />
       <Cafe24ApiDiagnosticsPanel lookup={data.cafe24OrderLookup} />
         </>
       ) : null}
