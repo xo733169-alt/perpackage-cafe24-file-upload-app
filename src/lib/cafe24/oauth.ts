@@ -46,10 +46,14 @@ function normalizeScopes(value: string | string[] | undefined) {
   return value?.trim() || null;
 }
 
-function normalizeExpiry(value: string | undefined, fallbackSeconds: number) {
-  const timestamp = value ? new Date(value).getTime() : Number.NaN;
-  if (Number.isFinite(timestamp)) return new Date(timestamp).toISOString();
-  return new Date(Date.now() + fallbackSeconds * 1000).toISOString();
+function calculateExpiry(expiresIn: number, fallbackSeconds: number) {
+  const seconds = Number.isFinite(expiresIn) && expiresIn > 0
+    ? expiresIn
+    : fallbackSeconds;
+
+  // Cafe24 absolute expiry strings can be offset-less. Store from the
+  // duration instead so refresh decisions do not depend on timezone parsing.
+  return new Date(Date.now() + seconds * 1000).toISOString();
 }
 
 async function readSafeTokenErrorCode(response: Response) {
@@ -97,14 +101,8 @@ export async function requestCafe24Token(params: URLSearchParams): Promise<{
   return {
     accessToken: json.access_token,
     refreshToken: json.refresh_token,
-    accessTokenExpiresAt: normalizeExpiry(
-      json.expires_at,
-      Number.isFinite(accessExpiresIn) ? accessExpiresIn : 7200
-    ),
-    refreshTokenExpiresAt: normalizeExpiry(
-      json.refresh_token_expires_at,
-      Number.isFinite(refreshExpiresIn) ? refreshExpiresIn : 14 * 24 * 60 * 60
-    ),
+    accessTokenExpiresAt: calculateExpiry(accessExpiresIn, 7200),
+    refreshTokenExpiresAt: calculateExpiry(refreshExpiresIn, 14 * 24 * 60 * 60),
     scopes: normalizeScopes(json.scope ?? json.scopes)
   };
 }
