@@ -3,6 +3,7 @@ import { refreshCafe24AccessToken } from "./oauth";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 const REFRESH_MARGIN_MS = 10 * 60 * 1000;
+const refreshInFlightByMall = new Map<string, Promise<string>>();
 
 type InstallationRow = {
   id: string;
@@ -76,17 +77,7 @@ function shouldRefresh(expiresAt: string) {
   return !Number.isFinite(time) || time <= Date.now() + REFRESH_MARGIN_MS;
 }
 
-export async function getValidCafe24AccessToken(mallId?: string | null) {
-  const installation = await getCafe24Installation(mallId);
-
-  if (!installation) {
-    throw new Error("Cafe24 installation is not connected.");
-  }
-
-  if (!shouldRefresh(installation.access_token_expires_at)) {
-    return installation.access_token;
-  }
-
+async function refreshInstallationAccessToken(installation: InstallationRow) {
   const refreshed = await refreshCafe24AccessToken(installation.refresh_token);
   const updated = await upsertCafe24Installation({
     mallId: installation.mall_id,
@@ -101,4 +92,31 @@ export async function getValidCafe24AccessToken(mallId?: string | null) {
   });
 
   return updated.access_token;
+}
+
+export async function getValidCafe24AccessToken(mallId?: string | null) {
+  const installation = await getCafe24Installation(mallId);
+
+  if (!installation) {
+    throw new Error("Cafe24 installation is not connected.");
+  }
+
+  if (!shouldRefresh(installation.access_token_expires_at)) {
+    return installation.access_token;
+  }
+
+  const installationMallId = installation.mall_id;
+  const existingRefresh = refreshInFlightByMall.get(installationMallId);
+  if (existingRefresh) return existingRefresh;
+
+  const refreshPromise = refreshInstallationAccessToken(installation);
+  refreshInFlightByMall.set(installationMallId, refreshPromise);
+
+  try {
+    return await refreshPromise;
+  } finally {
+    if (refreshInFlightByMall.get(installationMallId) === refreshPromise) {
+      refreshInFlightByMall.delete(installationMallId);
+    }
+  }
 }

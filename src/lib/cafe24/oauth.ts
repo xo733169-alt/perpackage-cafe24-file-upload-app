@@ -64,7 +64,7 @@ export async function requestCafe24Token(params: URLSearchParams): Promise<{
   });
 
   if (!response.ok) {
-    throw new Error("Cafe24 token request failed.");
+    throw new Error(`Cafe24 token request failed with status ${response.status}.`);
   }
 
   const json = (await response.json()) as Cafe24TokenResponse;
