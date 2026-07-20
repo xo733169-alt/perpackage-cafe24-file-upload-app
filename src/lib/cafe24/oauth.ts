@@ -46,6 +46,22 @@ function normalizeScopes(value: string | string[] | undefined) {
   return value?.trim() || null;
 }
 
+function normalizeExpiry(value: string | undefined, fallbackSeconds: number) {
+  const timestamp = value ? new Date(value).getTime() : Number.NaN;
+  if (Number.isFinite(timestamp)) return new Date(timestamp).toISOString();
+  return new Date(Date.now() + fallbackSeconds * 1000).toISOString();
+}
+
+async function readSafeTokenErrorCode(response: Response) {
+  try {
+    const payload = await response.json() as { error?: unknown };
+    const code = typeof payload.error === "string" ? payload.error.trim() : "";
+    return /^[a-z0-9_-]{1,80}$/i.test(code) ? code : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function requestCafe24Token(params: URLSearchParams): Promise<{
   accessToken: string;
   refreshToken: string;
@@ -64,7 +80,9 @@ export async function requestCafe24Token(params: URLSearchParams): Promise<{
   });
 
   if (!response.ok) {
-    throw new Error(`Cafe24 token request failed with status ${response.status}.`);
+    const errorCode = await readSafeTokenErrorCode(response);
+    const suffix = errorCode ? ` (${errorCode})` : "";
+    throw new Error(`Cafe24 token request failed with status ${response.status}${suffix}.`);
   }
 
   const json = (await response.json()) as Cafe24TokenResponse;
@@ -79,8 +97,14 @@ export async function requestCafe24Token(params: URLSearchParams): Promise<{
   return {
     accessToken: json.access_token,
     refreshToken: json.refresh_token,
-    accessTokenExpiresAt: new Date(Date.now() + (Number.isFinite(accessExpiresIn) ? accessExpiresIn : 7200) * 1000).toISOString(),
-    refreshTokenExpiresAt: new Date(Date.now() + (Number.isFinite(refreshExpiresIn) ? refreshExpiresIn : 14 * 24 * 60 * 60) * 1000).toISOString(),
+    accessTokenExpiresAt: normalizeExpiry(
+      json.expires_at,
+      Number.isFinite(accessExpiresIn) ? accessExpiresIn : 7200
+    ),
+    refreshTokenExpiresAt: normalizeExpiry(
+      json.refresh_token_expires_at,
+      Number.isFinite(refreshExpiresIn) ? refreshExpiresIn : 14 * 24 * 60 * 60
+    ),
     scopes: normalizeScopes(json.scope ?? json.scopes)
   };
 }

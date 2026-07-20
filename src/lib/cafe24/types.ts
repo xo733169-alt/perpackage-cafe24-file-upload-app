@@ -42,6 +42,8 @@ export type Cafe24TokenResponse = {
   refresh_token?: string;
   expires_in?: number | string;
   refresh_token_expires_in?: number | string;
+  expires_at?: string;
+  refresh_token_expires_at?: string;
   scope?: string | string[];
   scopes?: string | string[];
   token_type?: string;
