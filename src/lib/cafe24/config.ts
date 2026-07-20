@@ -2,6 +2,7 @@ export const DEFAULT_CAFE24_API_VERSION = "2024-06-01";
 export const DEFAULT_CAFE24_SCOPES = [
   "mall.read_application",
   "mall.read_product",
+  "mall.write_product",
   "mall.read_category",
   "mall.read_community",
   "mall.read_order"

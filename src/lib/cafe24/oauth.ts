@@ -34,7 +34,8 @@ export function buildCafe24AuthorizeUrl(state: string) {
   url.searchParams.set("response_type", "code");
   url.searchParams.set("client_id", config.clientId);
   url.searchParams.set("redirect_uri", config.redirectUri);
-  url.searchParams.set("scope", config.scopes.join(","));
+  // Cafe24 OAuth expects individual scopes separated by spaces.
+  url.searchParams.set("scope", config.scopes.join(" "));
   url.searchParams.set("state", state);
 
   return url.toString();

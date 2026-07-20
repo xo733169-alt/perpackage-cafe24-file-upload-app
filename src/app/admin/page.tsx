@@ -2475,6 +2475,8 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
 
       <section className="panel panel-pad">
         <h2>OAuth connection status</h2>
+        <p className="lead">??? ????? OAuth ??? ??? ?? Cafe24 ??? ?? ?????.</p>
+        <a className="button secondary" href="/api/cafe24/auth/start">Cafe24 ???</a>
         <div className="grid grid-3">
           <div className="card"><span>mall_id</span><strong>{data.installation?.mall_id ?? "-"}</strong></div>
           <div className="card"><span>shop_no</span><strong>{data.installation?.shop_no ?? "-"}</strong></div>
