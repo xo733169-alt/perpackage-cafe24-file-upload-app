@@ -1,9 +1,6 @@
 import { getCafe24ApiBaseUrl, requireCafe24Config } from "./config";
 import { getCafe24Installation, getValidCafe24AccessToken } from "./token-store";
 
-const MAX_VARIANT_PAGES = 10;
-const VARIANT_PAGE_SIZE = 100;
-
 export type Cafe24ProductVariantSummary = {
   variantCode: string | null;
   optionValues: string[];
@@ -115,23 +112,12 @@ export async function fetchCafe24ProductVariants(productNo: string, mallId?: str
   const installation = await getCafe24Installation(resolvedMallId);
   const accessToken = await getValidCafe24AccessToken(resolvedMallId);
   const apiBaseUrl = getCafe24ApiBaseUrl(resolvedMallId);
-  const variants: Cafe24ProductVariantSummary[] = [];
-
-  for (let page = 0; page < MAX_VARIANT_PAGES; page += 1) {
-    const url = new URL(`${apiBaseUrl}/api/v2/admin/products/${encodeURIComponent(normalizedProductNo)}/variants`);
-    url.searchParams.set("limit", String(VARIANT_PAGE_SIZE));
-    url.searchParams.set("offset", String(page * VARIANT_PAGE_SIZE));
-    if (installation?.shop_no) {
-      url.searchParams.set("shop_no", installation.shop_no);
-    }
-
-    const rows = getVariantRows(await fetchCafe24Json(url.toString(), accessToken, config.apiVersion));
-    variants.push(...rows.map(summarizeVariant));
-
-    if (rows.length < VARIANT_PAGE_SIZE) break;
+  const url = new URL(`${apiBaseUrl}/api/v2/admin/products/${encodeURIComponent(normalizedProductNo)}/variants`);
+  if (installation?.shop_no) {
+    url.searchParams.set("shop_no", installation.shop_no);
   }
 
-  return variants;
+  return getVariantRows(await fetchCafe24Json(url.toString(), accessToken, config.apiVersion)).map(summarizeVariant);
 }
 
 export async function fetchCafe24ProductSellingPrice(productNo: string, mallId?: string | null) {
