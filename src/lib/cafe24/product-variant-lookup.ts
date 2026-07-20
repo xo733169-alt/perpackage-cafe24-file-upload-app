@@ -101,7 +101,11 @@ async function fetchCafe24Json(endpoint: string, accessToken: string, apiVersion
   return response.json() as Promise<unknown>;
 }
 
-export async function fetchCafe24ProductVariants(productNo: string, mallId?: string | null) {
+export async function fetchCafe24ProductVariants(
+  productNo: string,
+  mallId?: string | null,
+  resolvedAccessToken?: string
+) {
   const normalizedProductNo = productNo.trim();
   if (!/^\d+$/.test(normalizedProductNo)) {
     throw new Error("Cafe24 product_no is invalid.");
@@ -110,7 +114,7 @@ export async function fetchCafe24ProductVariants(productNo: string, mallId?: str
   const config = requireCafe24Config();
   const resolvedMallId = mallId?.trim() || config.mallId;
   const installation = await getCafe24Installation(resolvedMallId);
-  const accessToken = await getValidCafe24AccessToken(resolvedMallId);
+  const accessToken = resolvedAccessToken ?? await getValidCafe24AccessToken(resolvedMallId);
   const apiBaseUrl = getCafe24ApiBaseUrl(resolvedMallId);
   const url = new URL(`${apiBaseUrl}/api/v2/admin/products/${encodeURIComponent(normalizedProductNo)}/variants`);
   if (installation?.shop_no) {
@@ -120,7 +124,11 @@ export async function fetchCafe24ProductVariants(productNo: string, mallId?: str
   return getVariantRows(await fetchCafe24Json(url.toString(), accessToken, config.apiVersion)).map(summarizeVariant);
 }
 
-export async function fetchCafe24ProductSellingPrice(productNo: string, mallId?: string | null) {
+export async function fetchCafe24ProductSellingPrice(
+  productNo: string,
+  mallId?: string | null,
+  resolvedAccessToken?: string
+) {
   const normalizedProductNo = productNo.trim();
   if (!/^\d+$/.test(normalizedProductNo)) {
     throw new Error("Cafe24 product_no is invalid.");
@@ -129,7 +137,7 @@ export async function fetchCafe24ProductSellingPrice(productNo: string, mallId?:
   const config = requireCafe24Config();
   const resolvedMallId = mallId?.trim() || config.mallId;
   const installation = await getCafe24Installation(resolvedMallId);
-  const accessToken = await getValidCafe24AccessToken(resolvedMallId);
+  const accessToken = resolvedAccessToken ?? await getValidCafe24AccessToken(resolvedMallId);
   const url = new URL(`${getCafe24ApiBaseUrl(resolvedMallId)}/api/v2/admin/products/${encodeURIComponent(normalizedProductNo)}`);
   if (installation?.shop_no) {
     url.searchParams.set("shop_no", installation.shop_no);

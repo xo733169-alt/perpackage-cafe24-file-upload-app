@@ -2481,8 +2481,8 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
           <div className="card"><span>mall_id</span><strong>{data.installation?.mall_id ?? "-"}</strong></div>
           <div className="card"><span>shop_no</span><strong>{data.installation?.shop_no ?? "-"}</strong></div>
           <div className="card"><span>status</span><strong>{data.installation?.status ?? "not_connected"}</strong></div>
-          <div className="card"><span>access token expires</span><strong>{data.installation?.access_token_expires_at ?? "-"}</strong></div>
-          <div className="card"><span>refresh token expires</span><strong>{data.installation?.refresh_token_expires_at ?? "-"}</strong></div>
+          <div className="card"><span>access token expires</span><strong>{data.installation?.access_token_expires_at ? formatAdminDateTime(data.installation.access_token_expires_at) : "-"}</strong></div>
+          <div className="card"><span>refresh token expires</span><strong>{data.installation?.refresh_token_expires_at ? formatAdminDateTime(data.installation.refresh_token_expires_at) : "-"}</strong></div>
           <div className="card"><span>scopes</span><strong>{data.installation?.scopes ?? "-"}</strong></div>
         </div>
       </section>

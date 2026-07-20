@@ -4,6 +4,7 @@ import {
   fetchCafe24ProductSellingPrice,
   fetchCafe24ProductVariants
 } from "@/lib/cafe24/product-variant-lookup";
+import { getValidCafe24AccessToken } from "@/lib/cafe24/token-store";
 import {
   getExpectedCafe24VariantPrices
 } from "@/lib/quotes/cafe24-price-sync-preflight";
@@ -35,10 +36,12 @@ export async function GET(
   }
 
   try {
+    // Resolve once so the two Cafe24 reads cannot trigger competing token refreshes.
+    const accessToken = await getValidCafe24AccessToken();
     const [expected, variants, productPrice] = await Promise.all([
       getExpectedCafe24VariantPrices(quoteProductCode),
-      fetchCafe24ProductVariants(productNo),
-      fetchCafe24ProductSellingPrice(productNo)
+      fetchCafe24ProductVariants(productNo, undefined, accessToken),
+      fetchCafe24ProductSellingPrice(productNo, undefined, accessToken)
     ]);
     if (!expected) {
       return jsonError("No active quote price version is available.", 404);
