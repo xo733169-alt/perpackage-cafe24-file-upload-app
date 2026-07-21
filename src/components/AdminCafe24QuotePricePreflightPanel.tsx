@@ -18,6 +18,28 @@ type PricePreflightComparison = {
   missing_expected_variant_count: number;
   unexpected_cafe24_variant_count: number;
   price_mismatch_count: number;
+  price_mismatch_reason_summary: Array<{
+    reason: string;
+    count: number;
+  }>;
+  price_sync_plan_count: number;
+  price_sync_plan: Array<{
+    option_key: string;
+    option_values: string[];
+    expected_additional_amount: number;
+    cafe24_additional_amount: number | null;
+    planned_additional_amount: number;
+    difference_amount: number | null;
+    reason: string;
+    operation: "set_additional_amount";
+  }>;
+  price_mismatch_examples: Array<{
+    option_values: string[];
+    expected_additional_amount: number;
+    cafe24_additional_amount: number | null;
+    difference_amount: number | null;
+    reason: string;
+  }>;
   ready_for_price_write: boolean;
 };
 
@@ -27,6 +49,38 @@ type PreflightResponse =
 
 function formatWon(value: number | null) {
   return value === null ? "확인 불가" : `${value.toLocaleString()}원`;
+}
+
+function formatSignedWon(value: number | null) {
+  if (value === null) {
+    return "확인 불가";
+  }
+
+  return `${value > 0 ? "+" : ""}${value.toLocaleString()}원`;
+}
+
+function toCsvCell(value: string | number | null) {
+  const stringValue = String(value ?? "");
+  const safeValue = /^[=+\-@]/.test(stringValue)
+    ? `'${stringValue}`
+    : stringValue;
+
+  return `"${safeValue.replace(/"/g, "\"\"")}"`;
+}
+
+function getMismatchReasonLabel(reason: string) {
+  switch (reason) {
+    case "cafe24_additional_amount_missing":
+      return "Cafe24 추가금 확인 불가";
+    case "cafe24_additional_amount_zero":
+      return "Cafe24 추가금 0원";
+    case "cafe24_additional_amount_lower":
+      return "Cafe24 추가금 낮음";
+    case "cafe24_additional_amount_higher":
+      return "Cafe24 추가금 높음";
+    default:
+      return "확인 필요";
+  }
 }
 
 function getResultMessage(comparison: PricePreflightComparison) {
@@ -69,6 +123,44 @@ export function AdminCafe24QuotePricePreflightPanel() {
     }
   }
 
+  function downloadPriceSyncPlan() {
+    if (!comparison || comparison.price_sync_plan.length === 0) return;
+
+    const header = [
+      "Option key",
+      "Option values",
+      "Current Cafe24 additional amount",
+      "Quote additional amount",
+      "Planned Cafe24 additional amount",
+      "Difference",
+      "Mismatch reason",
+      "Planned operation"
+    ];
+    const rows = comparison.price_sync_plan.map((item) => [
+      item.option_key,
+      item.option_values.join(" / "),
+      item.cafe24_additional_amount,
+      item.expected_additional_amount,
+      item.planned_additional_amount,
+      item.difference_amount,
+      getMismatchReasonLabel(item.reason),
+      item.operation
+    ]);
+    const csv = `\uFEFF${[header, ...rows]
+      .map((row) => row.map(toCsvCell).join(","))
+      .join("\r\n")}`;
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = objectUrl;
+    link.download = `cafe24-quote-price-plan-product-${comparison.cafe24_product_no}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(objectUrl);
+  }
+
   return (
     <section className="panel panel-pad" id="cafe24-quote-price-preflight">
       <h2>Cafe24 견적 가격 사전 점검</h2>
@@ -87,6 +179,16 @@ export function AdminCafe24QuotePricePreflightPanel() {
           <div className="notice" style={{ marginBottom: 16 }}>
             {getResultMessage(comparison)}
           </div>
+          {comparison.price_sync_plan_count > 0 ? (
+            <div style={{ marginBottom: 16 }}>
+              <p className="lead" style={{ marginTop: 0 }}>
+                전체 {comparison.price_sync_plan_count.toLocaleString()}건의 반영 계획을 CSV로 내려받아 검토할 수 있습니다. 이 파일은 실제 Cafe24 가격을 변경하지 않습니다.
+              </p>
+              <button className="button" onClick={downloadPriceSyncPlan} type="button">
+                전체 반영 계획 CSV 내려받기
+              </button>
+            </div>
+          ) : null}
           <div className="grid grid-3">
             <div className="card"><span>견적 기준가</span><strong>{formatWon(comparison.recommended_base_price)}</strong></div>
             <div className="card"><span>Cafe24 기본가</span><strong>{formatWon(comparison.cafe24_base_price)}</strong></div>
@@ -101,6 +203,46 @@ export function AdminCafe24QuotePricePreflightPanel() {
             <div className="card"><span>예상 밖 Cafe24 조합</span><strong>{comparison.unexpected_cafe24_variant_count.toLocaleString()}건</strong></div>
             <div className="card"><span>다음 단계 가능</span><strong>{comparison.ready_for_price_write ? "검토 가능" : "불가"}</strong></div>
           </div>
+          {comparison.price_mismatch_count > 0 ? (
+            <section aria-label="추가금 불일치 원인" style={{ marginTop: 20 }}>
+              <h3 style={{ marginBottom: 8 }}>추가금 불일치 원인</h3>
+              <p className="lead" style={{ marginTop: 0 }}>
+                실제 Cafe24 가격과 옵션은 변경하지 않습니다. 최대 50건의 예시만 표시합니다.
+              </p>
+              <div className="grid grid-3" style={{ marginBottom: 16 }}>
+                {comparison.price_mismatch_reason_summary.map((item) => (
+                  <div className="card" key={item.reason}>
+                    <span>{getMismatchReasonLabel(item.reason)}</span>
+                    <strong>{item.count.toLocaleString()}건</strong>
+                  </div>
+                ))}
+              </div>
+              <div style={{ overflowX: "auto" }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th scope="col">옵션</th>
+                      <th scope="col">견적 추가금</th>
+                      <th scope="col">Cafe24 추가금</th>
+                      <th scope="col">차이</th>
+                      <th scope="col">원인</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {comparison.price_mismatch_examples.map((example, index) => (
+                      <tr key={`${example.option_values.join("|")}-${index}`}>
+                        <td>{example.option_values.join(" / ")}</td>
+                        <td>{formatWon(example.expected_additional_amount)}</td>
+                        <td>{formatWon(example.cafe24_additional_amount)}</td>
+                        <td>{formatSignedWon(example.difference_amount)}</td>
+                        <td>{getMismatchReasonLabel(example.reason)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ) : null}
         </div>
       ) : null}
     </section>
