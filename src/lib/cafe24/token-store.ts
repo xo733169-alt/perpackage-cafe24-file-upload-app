@@ -17,6 +17,7 @@ type InstallationRow = {
   user_id: string | null;
   user_type: string | null;
   status: string;
+  updated_at: string;
 };
 
 export async function upsertCafe24Installation(input: {
@@ -64,7 +65,7 @@ export async function getCafe24Installation(mallId?: string | null) {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("cafe24_installations")
-    .select("id,mall_id,shop_no,access_token,refresh_token,access_token_expires_at,refresh_token_expires_at,scopes,user_id,user_type,status")
+    .select("id,mall_id,shop_no,access_token,refresh_token,access_token_expires_at,refresh_token_expires_at,scopes,user_id,user_type,status,updated_at")
     .eq("mall_id", resolvedMallId)
     .maybeSingle();
 
@@ -72,9 +73,19 @@ export async function getCafe24Installation(mallId?: string | null) {
   return data as InstallationRow | null;
 }
 
-function shouldRefresh(expiresAt: string) {
-  const time = new Date(expiresAt).getTime();
-  return !Number.isFinite(time) || time <= Date.now() + REFRESH_MARGIN_MS;
+function getRefreshState(expiresAt: string) {
+  const expiresAtMs = new Date(expiresAt).getTime();
+
+  if (!Number.isFinite(expiresAtMs)) {
+    return { refreshRequired: true, reason: "invalid_expiry", remainingSeconds: null };
+  }
+
+  const remainingSeconds = Math.floor((expiresAtMs - Date.now()) / 1000);
+  return {
+    refreshRequired: remainingSeconds <= REFRESH_MARGIN_MS / 1000,
+    reason: remainingSeconds <= REFRESH_MARGIN_MS / 1000 ? "near_expiry" : "valid",
+    remainingSeconds
+  };
 }
 
 async function refreshInstallationAccessToken(installation: InstallationRow) {
@@ -101,7 +112,15 @@ export async function getValidCafe24AccessToken(mallId?: string | null) {
     throw new Error("Cafe24 installation is not connected.");
   }
 
-  if (!shouldRefresh(installation.access_token_expires_at)) {
+  const refreshState = getRefreshState(installation.access_token_expires_at);
+  console.info("cafe24_access_token_resolution", {
+    mallId: installation.mall_id,
+    refreshRequired: refreshState.refreshRequired,
+    refreshReason: refreshState.reason,
+    remainingSeconds: refreshState.remainingSeconds
+  });
+
+  if (!refreshState.refreshRequired) {
     return installation.access_token;
   }
 
@@ -114,6 +133,32 @@ export async function getValidCafe24AccessToken(mallId?: string | null) {
 
   try {
     return await refreshPromise;
+  } catch (error) {
+    // Cafe24 refresh tokens rotate. A simultaneous successful OAuth callback can
+    // replace this row while the current request still has the older token.
+    const latestInstallation = await getCafe24Installation(installationMallId);
+    const latestRefreshState = latestInstallation
+      ? getRefreshState(latestInstallation.access_token_expires_at)
+      : null;
+
+    if (
+      latestInstallation &&
+      !latestRefreshState?.refreshRequired &&
+      (latestInstallation.updated_at !== installation.updated_at ||
+        latestInstallation.access_token !== installation.access_token)
+    ) {
+      console.info("cafe24_access_token_refresh_recovered", {
+        mallId: installationMallId,
+        remainingSeconds: latestRefreshState?.remainingSeconds ?? null
+      });
+      return latestInstallation.access_token;
+    }
+
+    console.warn("cafe24_access_token_refresh_failed", {
+      mallId: installationMallId,
+      refreshReason: refreshState.reason
+    });
+    throw error;
   } finally {
     if (refreshInFlightByMall.get(installationMallId) === refreshPromise) {
       refreshInFlightByMall.delete(installationMallId);
