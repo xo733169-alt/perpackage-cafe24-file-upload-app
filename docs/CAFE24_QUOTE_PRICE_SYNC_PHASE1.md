@@ -98,9 +98,12 @@ The protected administrator route is now available at:
 `GET /api/admin/cafe24/products/76/quote-price-preflight`
 
 It reads the active quote version and Cafe24 product/variant data, then returns
-counts only. It verifies the product base price, option-key coverage, duplicate
-keys, unreadable variants, and additional-amount mismatches. It does not expose
-variant codes, option values, OAuth credentials, or raw Cafe24 API data.
+the safe price-change plan. It verifies the product base price, option-key
+coverage, duplicate keys, unreadable variants, and additional-amount
+mismatches. For every mismatch, the protected administrator-only plan includes
+the Cafe24 variant code, current display/selling state, proposed additional
+amount, and rollback additional amount. It does not expose OAuth credentials or
+raw Cafe24 API data.
 
 ## Next implementation after the comparison is clean
 

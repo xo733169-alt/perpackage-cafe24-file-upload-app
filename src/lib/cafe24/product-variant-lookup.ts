@@ -13,6 +13,11 @@ export type Cafe24ProductPriceSummary = {
   sellingPrice: number | null;
 };
 
+export type Cafe24VariantAdditionalAmountUpdate = {
+  variantCode: string;
+  additionalAmount: number;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -99,6 +104,63 @@ async function fetchCafe24Json(endpoint: string, accessToken: string, apiVersion
   }
 
   return response.json() as Promise<unknown>;
+}
+
+async function putCafe24Json(
+  endpoint: string,
+  accessToken: string,
+  apiVersion: string,
+  body: Record<string, unknown>
+) {
+  const response = await fetch(endpoint, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+      "X-Cafe24-Api-Version": apiVersion
+    },
+    body: JSON.stringify(body),
+    cache: "no-store"
+  });
+
+  if (!response.ok) {
+    throw new Error(`Cafe24 variant update failed with status ${response.status}.`);
+  }
+}
+
+export async function updateCafe24ProductVariantAdditionalAmount(
+  productNo: string,
+  update: Cafe24VariantAdditionalAmountUpdate,
+  mallId?: string | null,
+  resolvedAccessToken?: string,
+  resolvedShopNo?: string | null
+) {
+  const normalizedProductNo = productNo.trim();
+  const normalizedVariantCode = update.variantCode.trim();
+  if (!/^\d+$/.test(normalizedProductNo) || !/^[A-Z0-9]{12}$/.test(normalizedVariantCode)) {
+    throw new Error("Cafe24 product or variant code is invalid.");
+  }
+  if (!Number.isSafeInteger(update.additionalAmount)) {
+    throw new Error("Cafe24 additional amount is invalid.");
+  }
+
+  const config = requireCafe24Config();
+  const resolvedMallId = mallId?.trim() || config.mallId;
+  const installation = resolvedShopNo === undefined
+    ? await getCafe24Installation(resolvedMallId)
+    : null;
+  const accessToken = resolvedAccessToken ?? await getValidCafe24AccessToken(resolvedMallId);
+  const url = new URL(
+    `${getCafe24ApiBaseUrl(resolvedMallId)}/api/v2/admin/products/${encodeURIComponent(normalizedProductNo)}/variants/${encodeURIComponent(normalizedVariantCode)}`
+  );
+  const shopNo = resolvedShopNo ?? installation?.shop_no;
+  if (shopNo) {
+    url.searchParams.set("shop_no", shopNo);
+  }
+
+  await putCafe24Json(url.toString(), accessToken, config.apiVersion, {
+    request: { additional_amount: update.additionalAmount }
+  });
 }
 
 export async function fetchCafe24ProductVariants(

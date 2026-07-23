@@ -74,12 +74,17 @@ export async function GET(
         price_mismatch_count: comparison.priceMismatchCount,
         price_mismatch_reason_summary: comparison.priceMismatchReasonSummary,
         price_sync_plan_count: comparison.priceSyncPlan.length,
+        unwritable_price_sync_plan_count: comparison.unwritablePriceSyncPlanCount,
         price_sync_plan: comparison.priceSyncPlan.map((item) => ({
           option_key: item.optionKey,
           option_values: item.optionValues,
+          cafe24_variant_code: item.cafe24VariantCode,
+          cafe24_display: item.cafe24Display,
+          cafe24_selling: item.cafe24Selling,
           expected_additional_amount: item.expectedAdditionalAmount,
           cafe24_additional_amount: item.cafe24AdditionalAmount,
           planned_additional_amount: item.plannedAdditionalAmount,
+          rollback_additional_amount: item.rollbackAdditionalAmount,
           difference_amount: item.differenceAmount,
           reason: item.reason,
           operation: item.operation

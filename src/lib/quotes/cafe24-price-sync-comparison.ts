@@ -15,6 +15,9 @@ export type Cafe24QuotePriceMismatchReasonSummary = {
 export type Cafe24QuotePriceMismatchExample = {
   optionKey: string;
   optionValues: string[];
+  cafe24VariantCode: string | null;
+  cafe24Display: string | null;
+  cafe24Selling: string | null;
   expectedAdditionalAmount: number;
   cafe24AdditionalAmount: number | null;
   differenceAmount: number | null;
@@ -23,6 +26,7 @@ export type Cafe24QuotePriceMismatchExample = {
 
 export type Cafe24QuotePriceSyncPlanItem = Cafe24QuotePriceMismatchExample & {
   plannedAdditionalAmount: number;
+  rollbackAdditionalAmount: number | null;
   operation: "set_additional_amount";
 };
 
@@ -38,6 +42,7 @@ export type Cafe24QuotePriceComparison = {
   priceMismatchCount: number;
   priceMismatchReasonSummary: Cafe24QuotePriceMismatchReasonSummary[];
   priceSyncPlan: Cafe24QuotePriceSyncPlanItem[];
+  unwritablePriceSyncPlanCount: number;
   priceMismatchExamples: Cafe24QuotePriceMismatchExample[];
   basePriceMismatch: boolean;
   readyForPriceWrite: boolean;
@@ -114,6 +119,9 @@ export function compareCafe24QuotePrices({
       {
         optionKey: row.optionKey,
         optionValues: row.optionKey.split("|"),
+        cafe24VariantCode: variant.variantCode,
+        cafe24Display: variant.display,
+        cafe24Selling: variant.selling,
         expectedAdditionalAmount: row.expectedAdditionalAmount,
         cafe24AdditionalAmount,
         differenceAmount:
@@ -139,8 +147,10 @@ export function compareCafe24QuotePrices({
   const priceSyncPlan = priceMismatchExamples.map((example) => ({
     ...example,
     plannedAdditionalAmount: example.expectedAdditionalAmount,
+    rollbackAdditionalAmount: example.cafe24AdditionalAmount,
     operation: "set_additional_amount" as const
   }));
+  const unwritablePriceSyncPlanCount = priceSyncPlan.filter((item) => !item.cafe24VariantCode).length;
   const basePriceMismatch = cafe24BasePrice !== expectedBasePrice;
   const unreadableCafe24VariantCount = cafe24Variants.length - readableVariants.length;
 
@@ -156,6 +166,7 @@ export function compareCafe24QuotePrices({
     priceMismatchCount,
     priceMismatchReasonSummary,
     priceSyncPlan,
+    unwritablePriceSyncPlanCount,
     priceMismatchExamples: priceMismatchExamples.slice(0, 50),
     basePriceMismatch,
     readyForPriceWrite: (
@@ -165,7 +176,7 @@ export function compareCafe24QuotePrices({
       missingExpectedVariantCount === 0 &&
       unexpectedCafe24VariantCount === 0 &&
       !basePriceMismatch &&
-      priceMismatchCount === 0
+      unwritablePriceSyncPlanCount === 0
     )
   };
 }

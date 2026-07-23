@@ -23,12 +23,17 @@ type PricePreflightComparison = {
     count: number;
   }>;
   price_sync_plan_count: number;
+  unwritable_price_sync_plan_count: number;
   price_sync_plan: Array<{
     option_key: string;
     option_values: string[];
+    cafe24_variant_code: string | null;
+    cafe24_display: string | null;
+    cafe24_selling: string | null;
     expected_additional_amount: number;
     cafe24_additional_amount: number | null;
     planned_additional_amount: number;
+    rollback_additional_amount: number | null;
     difference_amount: number | null;
     reason: string;
     operation: "set_additional_amount";
@@ -45,6 +50,10 @@ type PricePreflightComparison = {
 
 type PreflightResponse =
   | { ok: true; comparison: PricePreflightComparison }
+  | { ok: false; message?: string };
+
+type PriceSyncResponse =
+  | { ok: true; updated_variant_count: number; batch_count: number }
   | { ok: false; message?: string };
 
 function formatWon(value: number | null) {
@@ -85,7 +94,7 @@ function getMismatchReasonLabel(reason: string) {
 
 function getResultMessage(comparison: PricePreflightComparison) {
   if (comparison.ready_for_price_write) {
-    return "견적 매트릭스와 Cafe24 조합 가격이 모두 일치합니다. 실제 가격 반영 기능은 별도 승인 단계에서만 진행합니다.";
+    return "조합 매핑과 롤백 정보가 확인되었습니다. 실제 Cafe24 가격 반영은 별도 승인·배포 단계에서만 진행합니다.";
   }
 
   return "차이가 있는 항목이 있습니다. 실제 Cafe24 판매가나 옵션을 변경하지 말고, 아래 수치를 먼저 확인해 주세요.";
@@ -95,6 +104,7 @@ export function AdminCafe24QuotePricePreflightPanel() {
   const [comparison, setComparison] = useState<PricePreflightComparison | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isApplying, setIsApplying] = useState(false);
 
   async function handleRunPreflight() {
     if (isLoading) return;
@@ -129,9 +139,13 @@ export function AdminCafe24QuotePricePreflightPanel() {
     const header = [
       "Option key",
       "Option values",
+      "Cafe24 variant code",
+      "Cafe24 display status",
+      "Cafe24 selling status",
       "Current Cafe24 additional amount",
       "Quote additional amount",
       "Planned Cafe24 additional amount",
+      "Rollback Cafe24 additional amount",
       "Difference",
       "Mismatch reason",
       "Planned operation"
@@ -139,9 +153,13 @@ export function AdminCafe24QuotePricePreflightPanel() {
     const rows = comparison.price_sync_plan.map((item) => [
       item.option_key,
       item.option_values.join(" / "),
+      item.cafe24_variant_code,
+      item.cafe24_display,
+      item.cafe24_selling,
       item.cafe24_additional_amount,
       item.expected_additional_amount,
       item.planned_additional_amount,
+      item.rollback_additional_amount,
       item.difference_amount,
       getMismatchReasonLabel(item.reason),
       item.operation
@@ -159,6 +177,37 @@ export function AdminCafe24QuotePricePreflightPanel() {
     link.click();
     link.remove();
     URL.revokeObjectURL(objectUrl);
+  }
+
+  async function applyPriceSync() {
+    if (!comparison || !comparison.ready_for_price_write || isApplying) return;
+
+    const confirmed = window.confirm(
+      `Cafe24 상품 76의 ${comparison.price_sync_plan_count.toLocaleString()}개 품목 추가금을 변경합니다. CSV 롤백값을 확인한 뒤에만 진행하세요.`
+    );
+    if (!confirmed) return;
+
+    setIsApplying(true);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/admin/cafe24/products/76/quote-price-sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirmation: "APPLY_PRODUCT_76_ADDITIONAL_AMOUNTS" })
+      });
+      const result = await response.json().catch(() => null) as PriceSyncResponse | null;
+      if (!response.ok || !result || !result.ok) {
+        setMessage(result && !result.ok && result.message ? result.message : "Cafe24 추가금 반영에 실패했습니다. CSV 롤백값을 확인하세요.");
+        return;
+      }
+
+      setMessage(`Cafe24 추가금 ${result.updated_variant_count.toLocaleString()}개를 ${result.batch_count}개 묶음으로 반영하고 검증했습니다.`);
+      await handleRunPreflight();
+    } catch {
+      setMessage("네트워크 오류로 Cafe24 추가금 반영 결과를 확인하지 못했습니다. CSV 롤백값을 확인하세요.");
+    } finally {
+      setIsApplying(false);
+    }
   }
 
   return (
@@ -184,9 +233,19 @@ export function AdminCafe24QuotePricePreflightPanel() {
               <p className="lead" style={{ marginTop: 0 }}>
                 전체 {comparison.price_sync_plan_count.toLocaleString()}건의 반영 계획을 CSV로 내려받아 검토할 수 있습니다. 이 파일은 실제 Cafe24 가격을 변경하지 않습니다.
               </p>
+              {comparison.unwritable_price_sync_plan_count > 0 ? (
+                <div className="notice" style={{ marginBottom: 16 }}>
+                  {comparison.unwritable_price_sync_plan_count.toLocaleString()}개 조합에 Cafe24 품목 코드가 없어 API 반영 계획에서 제외해야 합니다.
+                </div>
+              ) : null}
               <button className="button" onClick={downloadPriceSyncPlan} type="button">
                 전체 반영 계획 CSV 내려받기
               </button>
+              {comparison.ready_for_price_write ? (
+                <button className="button" disabled={isApplying} onClick={applyPriceSync} style={{ marginLeft: 8 }} type="button">
+                  {isApplying ? "Cafe24 추가금 반영 중..." : "Cafe24 추가금 반영"}
+                </button>
+              ) : null}
             </div>
           ) : null}
           <div className="grid grid-3">
@@ -201,7 +260,7 @@ export function AdminCafe24QuotePricePreflightPanel() {
             <div className="card"><span>읽을 수 없는 Cafe24 조합</span><strong>{comparison.unreadable_cafe24_variant_count.toLocaleString()}건</strong></div>
             <div className="card"><span>누락된 Cafe24 조합</span><strong>{comparison.missing_expected_variant_count.toLocaleString()}건</strong></div>
             <div className="card"><span>예상 밖 Cafe24 조합</span><strong>{comparison.unexpected_cafe24_variant_count.toLocaleString()}건</strong></div>
-            <div className="card"><span>다음 단계 가능</span><strong>{comparison.ready_for_price_write ? "검토 가능" : "불가"}</strong></div>
+            <div className="card"><span>반영 사전조건</span><strong>{comparison.ready_for_price_write ? "충족" : "불가"}</strong></div>
           </div>
           {comparison.price_mismatch_count > 0 ? (
             <section aria-label="추가금 불일치 원인" style={{ marginTop: 20 }}>

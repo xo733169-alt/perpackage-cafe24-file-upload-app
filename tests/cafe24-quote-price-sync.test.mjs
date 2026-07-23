@@ -33,7 +33,7 @@ const matchingVariants = [
   }
 ];
 
-test("price sync preflight is ready only when base and every variant match", () => {
+test("price sync preflight is ready when the mapping, base price, and variant codes are safe", () => {
   const result = compareCafe24QuotePrices({
     expectedRows,
     expectedBasePrice: 30290,
@@ -142,6 +142,8 @@ test("price sync preflight groups additional amount mismatch reasons", () => {
     [500, -30290, -5000, null]
   );
   assert.equal(result.priceSyncPlan.length, 4);
+  assert.equal(result.unwritablePriceSyncPlanCount, 0);
+  assert.equal(result.readyForPriceWrite, true);
   assert.deepEqual(
     result.priceSyncPlan.map((item) => item.plannedAdditionalAmount),
     [0, 30290, 10000, 20000]
@@ -150,4 +152,26 @@ test("price sync preflight groups additional amount mismatch reasons", () => {
     result.priceSyncPlan.map((item) => item.operation),
     Array(4).fill("set_additional_amount")
   );
+  assert.deepEqual(
+    result.priceSyncPlan.map((item) => item.rollbackAdditionalAmount),
+    [500, 0, 5000, null]
+  );
+});
+
+test("price sync plan excludes variants without a Cafe24 variant code from API eligibility", () => {
+  const result = compareCafe24QuotePrices({
+    expectedRows: [expectedRows[1]],
+    expectedBasePrice: 30290,
+    cafe24BasePrice: 30290,
+    cafe24Variants: [{
+      ...matchingVariants[1],
+      variantCode: null,
+      additionalAmount: 0
+    }]
+  });
+
+  assert.equal(result.priceSyncPlan.length, 1);
+  assert.equal(result.unwritablePriceSyncPlanCount, 1);
+  assert.equal(result.readyForPriceWrite, false);
+  assert.equal(result.priceSyncPlan[0].rollbackAdditionalAmount, 0);
 });
