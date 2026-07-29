@@ -1595,6 +1595,15 @@
 
   function render() {
     if (document.getElementById(DIELINE_ID)) return;
+    var configuredProductNos = CONFIG.dielineProductNos;
+    var allowedProductNos = Array.isArray(configuredProductNos)
+      ? configuredProductNos
+      : String(configuredProductNos || "65").split(",");
+    var currentProductNo = productNoFromUrl();
+    var isAllowedProduct = allowedProductNos.some(function (productNo) {
+      return String(productNo).trim() === currentProductNo;
+    });
+    if (!isAllowedProduct) return;
     injectStyle();
     var upload = document.getElementById("app-perpackage-product-upload");
     var target = upload || document.querySelector(".xans-product-detail .infoArea, .xans-product-detail, #prdDetail, #contents") || document.body;
