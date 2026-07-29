@@ -1524,3 +1524,141 @@
     renderWidget();
   }
 })();
+
+/* Dieline download is intentionally isolated from the upload widget above. */
+(function () {
+  "use strict";
+
+  var DIELINE_ID = "app-perpackage-dieline-download";
+  var STYLE_ID = "app-perpackage-dieline-download-style";
+  var CONFIG = window.PERPACKAGE_PRODUCT_UPLOAD_CONFIG || {};
+
+  function appOrigin() {
+    if (CONFIG.appOrigin) return String(CONFIG.appOrigin).replace(/\/+$/, "");
+    var script = document.currentScript;
+    try { return script && script.src ? new URL(script.src).origin : ""; } catch (error) { return ""; }
+  }
+
+  function productNoFromUrl() {
+    try {
+      var queryValue = new URLSearchParams(window.location.search).get("product_no");
+      if (queryValue && /^\d+$/.test(queryValue.trim())) return queryValue.trim();
+    } catch (error) {}
+    var match = window.location.pathname.match(/\/product\/(?:[^/]+\/)?(\d+)(?:\/|$)/);
+    return match ? match[1] : "";
+  }
+
+  function normalizeSize(value) {
+    var numbers = String(value || "").match(/\d+(?:\.\d+)?/g);
+    if (!numbers || numbers.length !== 3) return "";
+    return numbers.map(function (number) { return number.replace(/\.0+$/, ""); }).join("x");
+  }
+
+  function isSizeSelect(select) {
+    if (!select || select.closest("#" + DIELINE_ID)) return false;
+    var scope = select.closest("tr, li, dl, .option, .xans-product-option") || select.parentElement;
+    var label = [select.name, select.id, select.getAttribute("title"), select.getAttribute("aria-label"), scope && scope.textContent].join(" ");
+    return /사이즈|size/i.test(label);
+  }
+
+  function selectedSize() {
+    var selects = document.querySelectorAll("select");
+    for (var i = 0; i < selects.length; i += 1) {
+      if (!isSizeSelect(selects[i])) continue;
+      var option = selects[i].options[selects[i].selectedIndex];
+      var value = option ? (option.textContent || option.value) : selects[i].value;
+      var size = normalizeSize(value);
+      if (size) return size;
+    }
+    return "";
+  }
+
+  function injectStyle() {
+    if (document.getElementById(STYLE_ID)) return;
+    var style = document.createElement("style");
+    style.id = STYLE_ID;
+    style.textContent = [
+      "#" + DIELINE_ID + "{margin:18px 0;padding:18px;border:1px solid #d9e2f2;border-radius:8px;background:#fff;color:#1f2a44;font-family:inherit;box-sizing:border-box}",
+      "#" + DIELINE_ID + " *{box-sizing:border-box}",
+      "#" + DIELINE_ID + " .ppd-title{margin:0 0 6px;font-size:17px;font-weight:700;color:#15213b}",
+      "#" + DIELINE_ID + " .ppd-desc,#" + DIELINE_ID + " .ppd-status{margin:0;font-size:13px;line-height:1.6;color:#4b5875}",
+      "#" + DIELINE_ID + " .ppd-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}",
+      "#" + DIELINE_ID + " .ppd-button{display:inline-flex;align-items:center;justify-content:center;min-width:132px;padding:10px 14px;border:1px solid #2A408C;border-radius:6px;background:#2A408C;color:#fff;font-size:13px;font-weight:700;text-decoration:none;cursor:pointer}",
+      "#" + DIELINE_ID + " .ppd-button--secondary{background:#fff;color:#2A408C}",
+      "#" + DIELINE_ID + " .ppd-button[aria-disabled='true']{border-color:#c7cdd8;background:#eef0f4;color:#8992a3;pointer-events:none}",
+      "#" + DIELINE_ID + " .ppd-state{margin-top:10px;padding:10px 12px;border-radius:6px;background:#f7faff;color:#4b5875;font-size:12px;line-height:1.55}",
+      "#" + DIELINE_ID + ".ppd-is-unavailable .ppd-state{background:#fff9e8;color:#8a5a00}",
+      "@media (max-width:560px){#" + DIELINE_ID + "{padding:14px}#" + DIELINE_ID + " .ppd-button{width:100%}}"
+    ].join("\n");
+    document.head.appendChild(style);
+  }
+
+  function render() {
+    if (document.getElementById(DIELINE_ID)) return;
+    injectStyle();
+    var upload = document.getElementById("app-perpackage-product-upload");
+    var target = upload || document.querySelector(".xans-product-detail .infoArea, .xans-product-detail, #prdDetail, #contents") || document.body;
+    var section = document.createElement("section");
+    section.id = DIELINE_ID;
+    section.setAttribute("aria-label", "칼선 파일 다운로드");
+    section.innerHTML = [
+      '<h3 class="ppd-title">칼선 파일 다운로드</h3>',
+      '<p class="ppd-desc">선택한 사이즈에 맞는 칼선 AI 파일과 PDF 미리보기를 확인할 수 있습니다.</p>',
+      '<div class="ppd-actions">',
+      '<a class="ppd-button" data-ppd="ai" aria-disabled="true">AI 다운로드</a>',
+      '<a class="ppd-button ppd-button--secondary" data-ppd="pdf" aria-disabled="true">PDF 미리보기</a>',
+      '<a class="ppd-button ppd-button--secondary" data-ppd="inquiry" hidden>칼선 문의하기</a>',
+      '</div><p class="ppd-state" role="status">사이즈를 선택하면 칼선 파일을 확인합니다.</p>'
+    ].join("");
+    if (upload && upload.parentNode) upload.parentNode.insertBefore(section, upload); else target.appendChild(section);
+    bind(section);
+  }
+
+  function bind(section) {
+    var ai = section.querySelector("[data-ppd='ai']");
+    var pdf = section.querySelector("[data-ppd='pdf']");
+    var inquiry = section.querySelector("[data-ppd='inquiry']");
+    var state = section.querySelector(".ppd-state");
+    var sequence = 0;
+
+    function disable(button) { button.removeAttribute("href"); button.setAttribute("aria-disabled", "true"); }
+    function enable(button, href, preview) { button.href = href; button.setAttribute("aria-disabled", "false"); if (preview) { button.target = "_blank"; button.rel = "noopener"; } else { button.removeAttribute("target"); button.removeAttribute("rel"); } }
+    function refresh() {
+      var current = ++sequence;
+      var productNo = productNoFromUrl();
+      var size = selectedSize();
+      disable(ai); disable(pdf); inquiry.hidden = true; section.classList.remove("ppd-is-unavailable");
+      if (!size) { state.textContent = "사이즈를 선택하면 칼선 파일을 확인합니다."; return; }
+      if (!productNo || !appOrigin()) { state.textContent = "칼선 정보를 불러올 수 없습니다. 잠시 후 다시 시도해 주세요."; return; }
+      state.textContent = "선택한 " + size + " 사이즈의 칼선을 확인하고 있습니다.";
+      fetch(appOrigin() + "/api/dielines/lookup?product_no=" + encodeURIComponent(productNo) + "&size=" + encodeURIComponent(size))
+        .then(function (response) { return response.json().then(function (json) { if (!response.ok || !json.ok) throw new Error(); return json; }); })
+        .then(function (json) {
+          if (current !== sequence) return;
+          var dieline = json.dieline || {};
+          var base = appOrigin() + "/api/dielines/download?product_no=" + encodeURIComponent(productNo) + "&size=" + encodeURIComponent(size) + "&format=";
+          if (dieline.ai_available) enable(ai, base + "ai", false);
+          if (dieline.pdf_available) enable(pdf, base + "pdf", true);
+          if (dieline.ai_available || dieline.pdf_available) { state.textContent = size + " 사이즈의 등록된 칼선입니다."; return; }
+          section.classList.add("ppd-is-unavailable"); inquiry.href = CONFIG.dielineInquiryUrl || "/board/product/write.html?board_no=6"; inquiry.hidden = false; state.textContent = "등록된 칼선이 없습니다. 칼선 문의하기로 제작 가능 여부를 확인해 주세요.";
+        })
+        .catch(function () { if (current === sequence) { section.classList.add("ppd-is-unavailable"); inquiry.href = CONFIG.dielineInquiryUrl || "/board/product/write.html?board_no=6"; inquiry.hidden = false; state.textContent = "칼선 정보를 불러오지 못했습니다. 칼선 문의하기로 문의해 주세요."; } });
+    }
+
+    document.addEventListener("change", function (event) { if (event.target && event.target.tagName === "SELECT" && isSizeSelect(event.target)) refresh(); });
+    document.addEventListener("input", function (event) { if (event.target && event.target.tagName === "SELECT" && isSizeSelect(event.target)) refresh(); });
+    new MutationObserver(function (mutations) {
+      for (var i = 0; i < mutations.length; i += 1) {
+        var nodes = mutations[i].addedNodes;
+        for (var j = 0; j < nodes.length; j += 1) {
+          var node = nodes[j];
+          if (node.nodeType !== 1 || section.contains(node)) continue;
+          if (node.tagName === "SELECT" || (node.querySelector && node.querySelector("select"))) { refresh(); return; }
+        }
+      }
+    }).observe(document.body, { childList: true, subtree: true });
+    refresh();
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", render, { once: true }); else render();
+})();
