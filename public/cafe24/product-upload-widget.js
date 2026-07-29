@@ -1570,6 +1570,20 @@
       var size = normalizeSize(value);
       if (size) return size;
     }
+
+    var buttonOptionGroups = document.querySelectorAll("ul[option_title], ul[option_select_element]");
+    for (var j = 0; j < buttonOptionGroups.length; j += 1) {
+      var group = buttonOptionGroups[j];
+      var groupLabel = [group.getAttribute("option_title"), group.getAttribute("aria-label")].join(" ");
+      var rowHeader = group.closest && group.closest("tr") && group.closest("tr").querySelector("th");
+      if (rowHeader) groupLabel += " " + rowHeader.textContent;
+      if (!/사이즈|size/i.test(groupLabel)) continue;
+
+      var selectedItem = group.querySelector("li.ec-product-selected[option_value], li.selected[option_value], li[option_value].selected");
+      var buttonSize = normalizeSize(selectedItem && (selectedItem.getAttribute("option_value") || selectedItem.textContent));
+      if (buttonSize) return buttonSize;
+    }
+
     return "";
   }
 
@@ -1616,7 +1630,6 @@
       '<div class="ppd-actions">',
       '<a class="ppd-button" data-ppd="ai" aria-disabled="true">AI 다운로드</a>',
       '<a class="ppd-button ppd-button--secondary" data-ppd="pdf" aria-disabled="true">PDF 미리보기</a>',
-      '<a class="ppd-button ppd-button--secondary" data-ppd="inquiry" hidden>칼선 문의하기</a>',
       '</div><p class="ppd-state" role="status">사이즈를 선택하면 칼선 파일을 확인합니다.</p>'
     ].join("");
     if (upload && upload.parentNode) upload.parentNode.insertBefore(section, upload); else target.appendChild(section);
@@ -1626,7 +1639,6 @@
   function bind(section) {
     var ai = section.querySelector("[data-ppd='ai']");
     var pdf = section.querySelector("[data-ppd='pdf']");
-    var inquiry = section.querySelector("[data-ppd='inquiry']");
     var state = section.querySelector(".ppd-state");
     var sequence = 0;
 
@@ -1636,7 +1648,7 @@
       var current = ++sequence;
       var productNo = productNoFromUrl();
       var size = selectedSize();
-      disable(ai); disable(pdf); inquiry.hidden = true; section.classList.remove("ppd-is-unavailable");
+      disable(ai); disable(pdf); section.classList.remove("ppd-is-unavailable");
       if (!size) { state.textContent = "사이즈를 선택하면 칼선 파일을 확인합니다."; return; }
       if (!productNo || !appOrigin()) { state.textContent = "칼선 정보를 불러올 수 없습니다. 잠시 후 다시 시도해 주세요."; return; }
       state.textContent = "선택한 " + size + " 사이즈의 칼선을 확인하고 있습니다.";
@@ -1649,13 +1661,18 @@
           if (dieline.ai_available) enable(ai, base + "ai", false);
           if (dieline.pdf_available) enable(pdf, base + "pdf", true);
           if (dieline.ai_available || dieline.pdf_available) { state.textContent = size + " 사이즈의 등록된 칼선입니다."; return; }
-          section.classList.add("ppd-is-unavailable"); inquiry.href = CONFIG.dielineInquiryUrl || "/board/product/write.html?board_no=6"; inquiry.hidden = false; state.textContent = "등록된 칼선이 없습니다. 칼선 문의하기로 제작 가능 여부를 확인해 주세요.";
+          section.classList.add("ppd-is-unavailable"); state.textContent = "등록된 칼선이 없습니다.";
         })
-        .catch(function () { if (current === sequence) { section.classList.add("ppd-is-unavailable"); inquiry.href = CONFIG.dielineInquiryUrl || "/board/product/write.html?board_no=6"; inquiry.hidden = false; state.textContent = "칼선 정보를 불러오지 못했습니다. 칼선 문의하기로 문의해 주세요."; } });
+        .catch(function () { if (current === sequence) { section.classList.add("ppd-is-unavailable"); state.textContent = "칼선 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요."; } });
     }
 
     document.addEventListener("change", function (event) { if (event.target && event.target.tagName === "SELECT" && isSizeSelect(event.target)) refresh(); });
     document.addEventListener("input", function (event) { if (event.target && event.target.tagName === "SELECT" && isSizeSelect(event.target)) refresh(); });
+    document.addEventListener("click", function (event) {
+      var optionButton = event.target && event.target.closest && event.target.closest("ul[option_title], ul[option_select_element]");
+      if (!optionButton || !/사이즈|size/i.test([optionButton.getAttribute("option_title"), optionButton.textContent].join(" "))) return;
+      window.setTimeout(refresh, 0);
+    });
     new MutationObserver(function (mutations) {
       for (var i = 0; i < mutations.length; i += 1) {
         var nodes = mutations[i].addedNodes;
