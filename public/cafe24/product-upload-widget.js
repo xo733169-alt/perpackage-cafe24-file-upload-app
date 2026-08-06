@@ -1558,12 +1558,17 @@
     return String(CONFIG.editorBaseUrl || "https://ecimg.cafe24img.com/pg1853b44513043087/peerl/web/upload/peerl-editor/index.html").trim();
   }
 
+  function editorVersion() {
+    return String(CONFIG.editorVersion || "20260806-3").trim();
+  }
+
   function editorHref(productNo, size) {
     try {
       var url = new URL(editorBaseUrl());
       url.searchParams.set("product_no", productNo);
       url.searchParams.set("size", size);
       if (appOrigin()) url.searchParams.set("dieline_api", appOrigin());
+      if (editorVersion()) url.searchParams.set("editor_version", editorVersion());
       return url.href;
     } catch (error) {
       return "";
