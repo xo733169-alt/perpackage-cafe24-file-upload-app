@@ -1559,7 +1559,7 @@
   }
 
   function editorVersion() {
-  return String(CONFIG.editorVersion || "20260806-7").trim();
+  return String(CONFIG.editorVersion || "20260806-8").trim();
   }
 
   function editorHref(productNo, size) {
