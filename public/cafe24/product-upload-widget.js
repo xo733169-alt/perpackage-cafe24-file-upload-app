@@ -1555,11 +1555,11 @@
   }
 
   function editorBaseUrl() {
-    return String(CONFIG.editorBaseUrl || "https://ecimg.cafe24img.com/pg1853b44513043087/peerl/web/upload/peerl-editor/editor-v20260806-14.html").trim();
+    return String(CONFIG.editorBaseUrl || "https://ecimg.cafe24img.com/pg1853b44513043087/peerl/web/upload/peerl-editor/editor-v20260806-15.html").trim();
   }
 
   function editorVersion() {
-    return String(CONFIG.editorVersion || "20260806-14").trim();
+    return String(CONFIG.editorVersion || "20260806-15").trim();
   }
 
   function editorHref(productNo, size) {
