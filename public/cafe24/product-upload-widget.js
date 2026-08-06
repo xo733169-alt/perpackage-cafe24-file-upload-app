@@ -1554,6 +1554,22 @@
     return numbers.map(function (number) { return number.replace(/\.0+$/, ""); }).join("x");
   }
 
+  function editorBaseUrl() {
+    return String(CONFIG.editorBaseUrl || "https://ecimg.cafe24img.com/pg1853b44513043087/peerl/web/upload/peerl-editor/index.html").trim();
+  }
+
+  function editorHref(productNo, size) {
+    try {
+      var url = new URL(editorBaseUrl());
+      url.searchParams.set("product_no", productNo);
+      url.searchParams.set("size", size);
+      if (appOrigin()) url.searchParams.set("dieline_api", appOrigin());
+      return url.href;
+    } catch (error) {
+      return "";
+    }
+  }
+
   function isSizeSelect(select) {
     if (!select || select.closest("#" + DIELINE_ID)) return false;
     var scope = select.closest("tr, li, dl, .option, .xans-product-option") || select.parentElement;
@@ -1630,6 +1646,7 @@
       '<div class="ppd-actions">',
       '<a class="ppd-button" data-ppd="ai" aria-disabled="true">AI 다운로드</a>',
       '<a class="ppd-button ppd-button--secondary" data-ppd="pdf" aria-disabled="true">PDF 미리보기</a>',
+      '<a class="ppd-button ppd-button--secondary" data-ppd="editor" aria-disabled="true">전개도 편집하기</a>',
       '</div><p class="ppd-state" role="status">사이즈를 선택하면 칼선 파일을 확인합니다.</p>'
     ].join("");
     if (upload && upload.parentNode) upload.parentNode.insertBefore(section, upload); else target.appendChild(section);
@@ -1639,6 +1656,7 @@
   function bind(section) {
     var ai = section.querySelector("[data-ppd='ai']");
     var pdf = section.querySelector("[data-ppd='pdf']");
+    var editor = section.querySelector("[data-ppd='editor']");
     var state = section.querySelector(".ppd-state");
     var sequence = 0;
 
@@ -1648,7 +1666,7 @@
       var current = ++sequence;
       var productNo = productNoFromUrl();
       var size = selectedSize();
-      disable(ai); disable(pdf); section.classList.remove("ppd-is-unavailable");
+      disable(ai); disable(pdf); disable(editor); section.classList.remove("ppd-is-unavailable");
       if (!size) { state.textContent = "사이즈를 선택하면 칼선 파일을 확인합니다."; return; }
       if (!productNo || !appOrigin()) { state.textContent = "칼선 정보를 불러올 수 없습니다. 잠시 후 다시 시도해 주세요."; return; }
       state.textContent = "선택한 " + size + " 사이즈의 칼선을 확인하고 있습니다.";
@@ -1660,7 +1678,11 @@
           var base = appOrigin() + "/api/dielines/download?product_no=" + encodeURIComponent(productNo) + "&size=" + encodeURIComponent(size) + "&format=";
           if (dieline.ai_available) enable(ai, base + "ai", false);
           if (dieline.pdf_available) enable(pdf, base + "pdf", true);
-          if (dieline.ai_available || dieline.pdf_available) { state.textContent = size + " 사이즈의 등록된 칼선입니다."; return; }
+          if (dieline.svg_available) {
+            var href = editorHref(productNo, size);
+            if (href) enable(editor, href, true);
+          }
+          if (dieline.ai_available || dieline.pdf_available || dieline.svg_available) { state.textContent = size + " 사이즈의 등록된 칼선입니다."; return; }
           section.classList.add("ppd-is-unavailable"); state.textContent = "등록된 칼선이 없습니다.";
         })
         .catch(function () { if (current === sequence) { section.classList.add("ppd-is-unavailable"); state.textContent = "칼선 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요."; } });

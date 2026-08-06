@@ -11,6 +11,9 @@ type DielineMappingRow = {
   pdf_storage_bucket: string | null;
   pdf_storage_path: string | null;
   pdf_filename: string | null;
+  svg_storage_bucket: string | null;
+  svg_storage_path: string | null;
+  svg_filename: string | null;
 };
 
 export type DielineFile = {
@@ -24,6 +27,7 @@ export type DielineLookup = {
   sizeKey: string;
   aiAvailable: boolean;
   pdfAvailable: boolean;
+  svgAvailable: boolean;
 };
 
 function cleanProductNo(value: string) {
@@ -47,7 +51,7 @@ async function getDielineMapping(productNo: string, sizeKey: string) {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("product_dielines")
-    .select("product_no,size_key,ai_storage_bucket,ai_storage_path,ai_filename,pdf_storage_bucket,pdf_storage_path,pdf_filename")
+    .select("product_no,size_key,ai_storage_bucket,ai_storage_path,ai_filename,pdf_storage_bucket,pdf_storage_path,pdf_filename,svg_storage_bucket,svg_storage_path,svg_filename")
     .eq("product_no", cleanProductNo(productNo))
     .eq("size_key", sizeKey)
     .eq("is_active", true)
@@ -68,7 +72,8 @@ export async function getDielineLookup(productNo: string, rawSize: string): Prom
     productNo: mapping.product_no,
     sizeKey: mapping.size_key,
     aiAvailable: hasFile(mapping.ai_storage_bucket, mapping.ai_storage_path),
-    pdfAvailable: hasFile(mapping.pdf_storage_bucket, mapping.pdf_storage_path)
+    pdfAvailable: hasFile(mapping.pdf_storage_bucket, mapping.pdf_storage_path),
+    svgAvailable: hasFile(mapping.svg_storage_bucket, mapping.svg_storage_path)
   };
 }
 
@@ -85,4 +90,18 @@ export async function getDielineFile(productNo: string, rawSize: string, format:
   if (!hasFile(bucket, path)) return null;
 
   return { bucket: bucket!.trim(), path: path!.trim(), filename };
+}
+
+export async function getDielineSvgFile(productNo: string, rawSize: string): Promise<DielineFile | null> {
+  const sizeKey = normalizeDielineSize(rawSize);
+  if (!sizeKey) return null;
+
+  const mapping = await getDielineMapping(productNo, sizeKey);
+  if (!mapping || !hasFile(mapping.svg_storage_bucket, mapping.svg_storage_path)) return null;
+
+  return {
+    bucket: mapping.svg_storage_bucket!.trim(),
+    path: mapping.svg_storage_path!.trim(),
+    filename: mapping.svg_filename
+  };
 }

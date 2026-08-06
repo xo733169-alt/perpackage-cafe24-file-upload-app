@@ -75,12 +75,13 @@ export async function GET(request: NextRequest) {
     const dieline = await getDielineLookup(productNo, size);
     return jsonWithCors(request, {
       ok: true,
-      available: Boolean(dieline?.aiAvailable || dieline?.pdfAvailable),
+      available: Boolean(dieline?.aiAvailable || dieline?.pdfAvailable || dieline?.svgAvailable),
       dieline: dieline && {
         product_no: dieline.productNo,
         size_key: dieline.sizeKey,
         ai_available: dieline.aiAvailable,
-        pdf_available: dieline.pdfAvailable
+        pdf_available: dieline.pdfAvailable,
+        svg_available: dieline.svgAvailable
       }
     });
   } catch (error) {

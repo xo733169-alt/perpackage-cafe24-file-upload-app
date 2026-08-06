@@ -94,6 +94,27 @@ export async function createSignedDownloadUrl(input: {
   );
 }
 
+export async function readTextFromNaverObjectStorage(input: {
+  bucket: string;
+  key: string;
+}): Promise<string> {
+  if (!input.bucket.trim() || !input.key.trim()) {
+    throw new Error("Missing storage read target.");
+  }
+
+  const client = createClient();
+  const response = await client.send(new GetObjectCommand({
+    Bucket: input.bucket,
+    Key: input.key
+  }));
+
+  if (!response.Body) {
+    throw new Error("Storage object body is empty.");
+  }
+
+  return response.Body.transformToString("utf-8");
+}
+
 function buildAttachmentContentDisposition(filename: string) {
   const safeFilename = sanitizeDownloadFilename(filename);
   const asciiFallback = safeFilename
